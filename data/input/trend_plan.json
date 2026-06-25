@@ -1,0 +1,6 @@
+{
+  "critical_room_points": {"interval_sec": 60, "retention_days": 30},
+  "major_equipment_points": {"interval_sec": 300, "retention_days": 30},
+  "plant_points": {"interval_sec": 300, "retention_days": 90},
+  "notes": "Synthetic trend plan for lab use only."
+}

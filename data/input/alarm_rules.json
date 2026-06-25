@@ -1,0 +1,8 @@
+[
+  {"point": "OR1_TEMP", "condition": "outside_normal", "priority": "critical", "message": "OR-1 temperature outside target range"},
+  {"point": "OR1_RH", "condition": "outside_normal", "priority": "critical", "message": "OR-1 humidity outside target range"},
+  {"point": "ISO201_PRESSURE", "condition": "outside_normal", "priority": "critical", "message": "Isolation Room 201 pressure not negative"},
+  {"point": "AHU_OR1_SAT", "condition": "outside_normal", "priority": "high", "message": "AHU-OR-1 discharge air temperature abnormal"},
+  {"point": "CHW_SUPPLY_TEMP", "condition": "outside_normal", "priority": "high", "message": "Chilled water supply temperature abnormal"},
+  {"point": "CHW_DIFF_PRESSURE", "condition": "outside_normal", "priority": "medium", "message": "Chilled water differential pressure abnormal"}
+]

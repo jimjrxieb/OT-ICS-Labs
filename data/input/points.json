@@ -1,0 +1,13 @@
+[
+  {"point": "AHU_OR1_SAT", "equipment": "AHU-OR-1", "type": "AI", "units": "F", "normal_min": 52, "normal_max": 58, "writable": false, "critical": true, "trend_interval_sec": 60},
+  {"point": "AHU_OR1_SAT_SP", "equipment": "AHU-OR-1", "type": "AV", "units": "F", "normal_min": 52, "normal_max": 58, "writable": true, "critical": true, "trend_interval_sec": 300},
+  {"point": "AHU_OR1_FAN_CMD", "equipment": "AHU-OR-1", "type": "BO", "units": "bool", "normal_min": 1, "normal_max": 1, "writable": true, "critical": true, "trend_interval_sec": 60},
+  {"point": "OR1_TEMP", "equipment": "VAV-OR-101", "type": "AI", "units": "F", "normal_min": 68, "normal_max": 72, "writable": false, "critical": true, "trend_interval_sec": 60},
+  {"point": "OR1_RH", "equipment": "VAV-OR-101", "type": "AI", "units": "%RH", "normal_min": 30, "normal_max": 60, "writable": false, "critical": true, "trend_interval_sec": 60},
+  {"point": "OR1_TEMP_SP", "equipment": "VAV-OR-101", "type": "AV", "units": "F", "normal_min": 68, "normal_max": 72, "writable": true, "critical": true, "trend_interval_sec": 300},
+  {"point": "ISO201_PRESSURE", "equipment": "RM-ISO-201", "type": "AI", "units": "in.w.c.", "normal_min": -0.030, "normal_max": -0.010, "writable": false, "critical": true, "trend_interval_sec": 60},
+  {"point": "ISO201_EXH_CMD", "equipment": "RM-ISO-201", "type": "BO", "units": "bool", "normal_min": 1, "normal_max": 1, "writable": true, "critical": true, "trend_interval_sec": 60},
+  {"point": "CHW_SUPPLY_TEMP", "equipment": "CHW-PLANT-1", "type": "AI", "units": "F", "normal_min": 42, "normal_max": 46, "writable": false, "critical": true, "trend_interval_sec": 300},
+  {"point": "CHW_DIFF_PRESSURE", "equipment": "CHW-PLANT-1", "type": "AI", "units": "psi", "normal_min": 12, "normal_max": 22, "writable": false, "critical": true, "trend_interval_sec": 300},
+  {"point": "HW_SUPPLY_TEMP", "equipment": "HW-PLANT-1", "type": "AI", "units": "F", "normal_min": 135, "normal_max": 155, "writable": false, "critical": false, "trend_interval_sec": 300}
+]
