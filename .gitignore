@@ -1,3 +1,4 @@
-simulator/__pycache__/
+__pycache__/
 *.pyc
+BREAK/sealed/2am-*.md
 

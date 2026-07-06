@@ -18,6 +18,8 @@ validate BAS operator and OT security readiness. In scope:
 
 ## Vendor/Program Stack
 
+### Enterprise Systems (Simulated)
+
 | Vendor/program | Synthetic role |
 |---|---|
 | Johnson Controls Metasys | Main BAS front end, ADS/ADX-style server, SNE/SNC-style supervisory engines, SCT archive concept. |
@@ -25,6 +27,25 @@ validate BAS operator and OT security readiness. In scope:
 | Tridium Niagara | Integration supervisor, JACE edge controllers, Workbench engineering access concept. |
 | CMMS/ticketing | Work orders, after-hours escalation, change records. |
 | SIEM/logging | Step 2 target for auth, remote access, firewall, alarm, backup, and change telemetry. |
+
+### Open Source Lab Stack (Runnable)
+
+The open source stack covers the same functional layers as the enterprise tools above.
+It runs locally, requires no licenses, and teaches the same protocols and concepts.
+
+| Tool | What it does | Replaces in prod |
+|---|---|---|
+| bacpypes3 | Python BACnet/IP protocol stack — exposes simulator points as real BACnet objects on localhost | Metasys BACnet driver, Niagara BACnet driver |
+| Node-RED | Visual flow programming, BACnet polling, logic wiring — mirrors Niagara programming model | Niagara programming engine, Metasys graphics engine |
+| InfluxDB | Time-series database — stores trend data from Node-RED | Metasys historian, Niagara History Extension |
+| Grafana | Time-series dashboards and alerting — visualizes InfluxDB trend data | Metasys Trend Viewer, Niagara History charts |
+| MQTT / Mosquitto | IoT pub/sub messaging broker — bridges BACnet poll data to Node-RED and Grafana | Niagara Fox protocol bridge |
+
+**Why this stack:** mirrors how real BAS integrators build open-protocol monitoring layers.
+Node-RED + bacpypes3 is the same pattern used by independent controls contractors who need
+to integrate across Metasys, Niagara, and Trane systems without vendor-specific tooling.
+Building this in the lab teaches the real BACnet Read-Property request/response cycle —
+the same interaction a JACE has with a field controller.
 
 ## Explicit Exclusions
 
@@ -46,6 +67,7 @@ validate BAS operator and OT security readiness. In scope:
 | Zone/conduit map is first-pass only. | Segmentation claims are not detailed enough. | Build zone/conduit matrix with allowed protocols. | BUILD -> BREAK |
 | No tabletop exercise yet. | Incident path is unproven. | Run synthetic isolation pressure loss + remote access anomaly tabletop. | BREAK -> PROVE |
 | No AI guardrail yet. | AI may be applied before BAS/security foundation is ready. | Park AI to Step 3 and require advisory-only policy. | Future BUILD |
+| Open source BAS stack not yet connected to simulator. | BACnet protocol learning gap; Grafana/Node-RED not wired to simulator output. | Add bacpypes3 BACnet/IP device layer, Node-RED polling flows, InfluxDB storage, Grafana dashboards. | BUILD (BP-003) |
 
 ## Human-Owned Decisions
 

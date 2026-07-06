@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metasys ADS — NAS JAX Regional Medical Center</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #222; font-size: 13px; }
+/* Header */
+#header { background: #003366; color: #fff; padding: 0 16px; height: 44px; display: flex; align-items: center; justify-content: space-between; }
+#header .left { display: flex; align-items: center; gap: 12px; }
+#header .logo { font-weight: 700; font-size: 1rem; letter-spacing: 0.04em; color: #7ec8e3; }
+#header .site-name { font-size: 0.85rem; color: #cce5ff; }
+#header .right { display: flex; align-items: center; gap: 16px; font-size: 0.78rem; color: #9ecfea; }
+#header .operator { color: #fff; font-weight: 600; }
+#scenario-badge { background: #004d99; border: 1px solid #7ec8e3; color: #7ec8e3; padding: 2px 10px; border-radius: 3px; font-size: 0.72rem; letter-spacing: 0.05em; }
+#synth-badge { background: #7a1a1a; color: #ffb3b3; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; }
+/* Layout */
+#layout { display: flex; height: calc(100vh - 44px); }
+/* Nav */
+#nav { width: 220px; min-width: 180px; background: #1a2a3a; color: #c8d8e8; overflow-y: auto; border-right: 1px solid #0d1f2d; }
+#nav .nav-section { padding: 8px 0; }
+#nav .nav-header { padding: 6px 14px; font-size: 0.7rem; color: #5a8aaa; text-transform: uppercase; letter-spacing: 0.08em; }
+#nav .nav-item { padding: 6px 14px 6px 22px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.8rem; }
+#nav .nav-item:hover { background: #243d52; }
+#nav .nav-item.active { background: #1a4a6e; color: #7ec8e3; border-left: 3px solid #7ec8e3; padding-left: 19px; }
+#nav .nav-item.l1 { padding-left: 14px; font-weight: 600; color: #9ecfea; }
+#nav .nav-item.l2 { padding-left: 22px; }
+#nav .nav-item.l3 { padding-left: 30px; font-size: 0.77rem; color: #8ab0c8; }
+/* Main */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+/* Tabs */
+#tabs { background: #e8edf2; border-bottom: 1px solid #c8d0da; display: flex; padding: 0 12px; gap: 2px; align-items: flex-end; padding-top: 6px; }
+.tab { padding: 7px 18px; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0; font-size: 0.8rem; color: #445; background: #d4dae2; }
+.tab:hover { background: #c8d0da; }
+.tab.active { background: #fff; border-color: #c8d0da; color: #003366; font-weight: 600; }
+/* Content */
+#content { flex: 1; overflow-y: auto; padding: 14px; }
+.panel { display: none; }
+.panel.active { display: block; }
+/* Toolbar */
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar label { font-size: 0.78rem; color: #556; }
+.toolbar select, .toolbar button { font-size: 0.78rem; padding: 4px 10px; border: 1px solid #bbb; border-radius: 3px; }
+.toolbar button { background: #003366; color: #fff; cursor: pointer; border-color: #003366; }
+.toolbar button:hover { background: #004d99; }
+.toolbar button.refresh { background: #2e7d32; border-color: #2e7d32; }
+/* Table */
+table { width: 100%; border-collapse: collapse; background: #fff; font-size: 0.8rem; }
+th { background: #1a3a5c; color: #cce5ff; padding: 7px 10px; text-align: left; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+td { padding: 6px 10px; border-bottom: 1px solid #e8ecf0; }
+tr:hover td { background: #f0f5fb; }
+.status-normal { color: #2e7d32; font-weight: 600; }
+.status-alarm { color: #c62828; font-weight: 700; }
+tr.row-alarm td { background: #fff3f3; }
+tr.row-alarm:hover td { background: #ffe8e8; }
+tr.row-critical td { background: #ffebee; border-left: 3px solid #c62828; }
+/* Priority badges */
+.pri { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; }
+.pri-critical { background: #c62828; color: #fff; }
+.pri-high { background: #e65100; color: #fff; }
+.pri-medium { background: #f9a825; color: #333; }
+/* Alarm panel */
+.alarm-summary { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.alarm-count-box { padding: 10px 18px; border-radius: 4px; font-size: 0.82rem; font-weight: 600; min-width: 100px; text-align: center; }
+.alarm-count-box.critical { background: #ffebee; border: 1px solid #c62828; color: #c62828; }
+.alarm-count-box.high { background: #fff3e0; border: 1px solid #e65100; color: #e65100; }
+.alarm-count-box.medium { background: #fffde7; border: 1px solid #f9a825; color: #a0750a; }
+.alarm-count-box.none { background: #e8f5e9; border: 1px solid #2e7d32; color: #2e7d32; }
+/* Ack button */
+.btn-ack { background: #455a64; color: #fff; border: none; padding: 3px 9px; border-radius: 3px; cursor: pointer; font-size: 0.72rem; }
+.btn-ack:hover { background: #263238; }
+.acked { text-decoration: line-through; opacity: 0.5; }
+/* Trend */
+#trend-select-wrap { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+#trend-select-wrap select { font-size: 0.82rem; padding: 5px 10px; border: 1px solid #bbb; border-radius: 3px; min-width: 220px; }
+#trend-select-wrap button { font-size: 0.78rem; padding: 5px 14px; background: #003366; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+#trend-select-wrap button:hover { background: #004d99; }
+canvas#sparkline { display: block; background: #fff; border: 1px solid #c8d0da; border-radius: 3px; margin-bottom: 10px; }
+/* Scenario runner */
+.run-wrap { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.run-wrap select { padding: 6px 12px; font-size: 0.82rem; border: 1px solid #bbb; border-radius: 3px; min-width: 240px; }
+.run-wrap button { padding: 6px 18px; font-size: 0.82rem; background: #003366; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-weight: 600; }
+.run-wrap button:hover { background: #004d99; }
+#run-result { font-size: 0.82rem; color: #2e7d32; padding: 8px 12px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 3px; display: none; }
+.override-flag { color: #7b1fa2; font-weight: 700; }
+.tech-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tech-actions input { width: 82px; padding: 4px 6px; border: 1px solid #bbb; border-radius: 3px; font-size: 0.78rem; }
+.tech-actions button { padding: 4px 9px; border: 1px solid #003366; background: #003366; color: #fff; border-radius: 3px; cursor: pointer; font-size: 0.74rem; }
+.tech-actions button.release { background: #616161; border-color: #616161; }
+.tech-note { margin: 8px 0 12px; color: #556; font-size: 0.8rem; line-height: 1.45; max-width: 980px; }
+.trouble-banner { padding: 10px 12px; border: 1px solid #f9a825; background: #fffde7; color: #5f4300; border-radius: 3px; margin-bottom: 12px; font-size: 0.84rem; }
+.trouble-result { display: none; padding: 10px 12px; border-radius: 3px; margin: 12px 0; font-size: 0.84rem; }
+.trouble-result.correct { display: block; border: 1px solid #2e7d32; background: #e8f5e9; color: #1b5e20; }
+.trouble-result.incorrect { display: block; border: 1px solid #c62828; background: #ffebee; color: #8a1c1c; }
+/* Section title */
+.section-title { font-size: 0.9rem; font-weight: 700; color: #003366; margin-bottom: 8px; border-bottom: 1px solid #c8d0da; padding-bottom: 6px; }
+.meta-row { font-size: 0.75rem; color: #78909c; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="left">
+    <span class="logo">METASYS</span>
+    <span class="site-name">NAS JAX Regional Medical Center &mdash; ADS Server: MET-ADS-01</span>
+  </div>
+  <div class="right">
+    <span>Operator: <span class="operator">BAS-OPR-01</span></span>
+    <span id="scenario-badge">Scenario: —</span>
+    <span id="synth-badge">SYNTHETIC LAB</span>
+  </div>
+</div>
+
+<div id="layout">
+  <div id="nav">
+    <div class="nav-section">
+      <div class="nav-header">Site Navigator</div>
+      <div class="nav-item l1" onclick="filterEquip(null)" id="nav-all">&#9632; NAS JAX Hospital</div>
+      <div class="nav-item l2">&#9654; BAS Network (MET-SNE-01)</div>
+      <div class="nav-item l3" onclick="filterEquip('AHU-OR-1')" id="nav-AHU-OR-1">&#x25A1; AHU-OR-1 (Trane)</div>
+      <div class="nav-item l3" onclick="filterEquip('AHU-ICU-1')" id="nav-AHU-ICU-1">&#x25A1; AHU-ICU-1 (JCI)</div>
+      <div class="nav-item l3" onclick="filterEquip('VAV-OR-101')" id="nav-VAV-OR-101">&#x25A1; VAV-OR-101 (JCI)</div>
+      <div class="nav-item l3" onclick="filterEquip('CHW-PLANT-1')" id="nav-CHW-PLANT-1">&#x25A1; CHW-PLANT-1</div>
+      <div class="nav-item l3" onclick="filterEquip('HW-PLANT-1')" id="nav-HW-PLANT-1">&#x25A1; HW-PLANT-1</div>
+      <div class="nav-item l2">&#9654; Integration (JACE-OT-01)</div>
+      <div class="nav-item l3" onclick="filterEquip('RM-ISO-201')" id="nav-RM-ISO-201">&#x25A1; RM-ISO-201 (Tridium)</div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="tabs">
+      <div class="tab active" onclick="showTab('points')">Point Browser</div>
+      <div class="tab" onclick="showTab('alarms')">Alarms</div>
+      <div class="tab" onclick="showTab('trends')">Trend Viewer</div>
+      <div class="tab" onclick="showTab('technician')">Technician Panel</div>
+      <div class="tab" onclick="showTab('trouble')">Trouble Call</div>
+      <div class="tab" onclick="showTab('run')">Run Scenario</div>
+    </div>
+    <div id="content">
+
+      <!-- POINTS -->
+      <div id="panel-points" class="panel active">
+        <div class="toolbar">
+          <label>Network Engine:</label>
+          <span id="equip-label" style="font-weight:600;color:#003366;">All Objects</span>
+          <button class="refresh" onclick="loadPoints()">&#8635; Refresh</button>
+        </div>
+        <div class="meta-row" id="points-meta"></div>
+        <table id="points-table">
+          <thead><tr>
+            <th>Object Name</th>
+            <th>Field Device</th>
+            <th>Type</th>
+            <th>Present Value</th>
+            <th>Units</th>
+            <th>Normal Range</th>
+            <th>Priority Array</th>
+            <th>COV Status</th>
+          </tr></thead>
+          <tbody id="points-body"></tbody>
+        </table>
+      </div>
+
+      <!-- ALARMS -->
+      <div id="panel-alarms" class="panel">
+        <div class="section-title">Active Alarm Summary</div>
+        <div class="alarm-summary" id="alarm-summary"></div>
+        <div class="toolbar">
+          <button class="refresh" onclick="loadAlarms()">&#8635; Refresh Alarms</button>
+        </div>
+        <table id="alarms-table">
+          <thead><tr>
+            <th>Timestamp</th>
+            <th>Priority</th>
+            <th>Object</th>
+            <th>Field Device</th>
+            <th>Message</th>
+            <th>Present Value</th>
+            <th>Normal Range</th>
+            <th>Acknowledge</th>
+          </tr></thead>
+          <tbody id="alarms-body"></tbody>
+        </table>
+      </div>
+
+      <!-- TRENDS -->
+      <div id="panel-trends" class="panel">
+        <div class="section-title">Trend Viewer — Sampled Value Extension</div>
+        <div id="trend-select-wrap">
+          <select id="trend-point-select">
+            <option value="">— select object —</option>
+            <option>AHU_OR1_SAT</option>
+            <option>AHU_OR1_SAT_SP</option>
+            <option>AHU_OR1_FAN_CMD</option>
+            <option>OR1_TEMP</option>
+            <option>OR1_RH</option>
+            <option>OR1_TEMP_SP</option>
+            <option>ISO201_PRESSURE</option>
+            <option>ISO201_EXH_CMD</option>
+            <option>CHW_SUPPLY_TEMP</option>
+            <option>CHW_DIFF_PRESSURE</option>
+            <option>HW_SUPPLY_TEMP</option>
+          </select>
+          <button onclick="loadTrend()">View Trend</button>
+        </div>
+        <canvas id="sparkline" width="700" height="120"></canvas>
+        <table id="trend-table">
+          <thead><tr><th>Timestamp</th><th>Object</th><th>Field Device</th><th>Sample Value</th><th>Units</th></tr></thead>
+          <tbody id="trend-body"></tbody>
+        </table>
+      </div>
+
+      <!-- TECHNICIAN PANEL -->
+      <div id="panel-technician" class="panel">
+        <div class="section-title">Technician Panel — Synthetic Commands</div>
+        <p class="tech-note">
+          Use these controls to practice DDC operator workflow: command writable points,
+          release overrides, then inspect point status, alarms, and trends. These actions
+          affect only the local synthetic snapshot and write `data/output/operator_actions.jsonl`.
+        </p>
+        <div class="toolbar">
+          <label for="tech-role-select">Role:</label>
+          <select id="tech-role-select" onchange="clearTechnicianStatus()">
+            <option value="viewer">viewer</option>
+          </select>
+          <button class="refresh" onclick="loadTechnician()">&#8635; Refresh Commands</button>
+        </div>
+        <div id="technician-status" class="meta-row"></div>
+        <table>
+          <thead><tr>
+            <th>Object Name</th>
+            <th>Field Device</th>
+            <th>Present Value</th>
+            <th>Normal Range</th>
+            <th>Override</th>
+            <th>Command</th>
+          </tr></thead>
+          <tbody id="technician-body"></tbody>
+        </table>
+        <div class="section-title" style="margin-top:18px;">Synthetic Operator Action Log</div>
+        <table>
+          <thead><tr><th>Timestamp</th><th>Action</th><th>Object</th><th>Value</th><th>Reason</th></tr></thead>
+          <tbody id="operator-log-body"></tbody>
+        </table>
+      </div>
+
+      <!-- TROUBLE CALL -->
+      <div id="panel-trouble" class="panel">
+        <div class="section-title">Trouble Call — Diagnostic Training</div>
+        <p class="tech-note">
+          Request one synthetic service call, investigate with Point Browser, Alarms, and Trend Viewer,
+          then submit the suspected equipment and fault category.
+        </p>
+        <div class="toolbar">
+          <button onclick="requestTroubleCall()">Request Trouble Call</button>
+          <button class="refresh" onclick="loadTroubleCall()">&#8635; Refresh Ticket</button>
+        </div>
+        <div id="trouble-empty" class="meta-row">No active trouble call.</div>
+        <div id="trouble-active" style="display:none;">
+          <div id="trouble-symptom" class="trouble-banner"></div>
+          <div class="meta-row">Check Point Browser, Alarms, and Trend Viewer before submitting diagnosis.</div>
+          <div class="run-wrap">
+            <select id="trouble-equipment-select"></select>
+            <select id="trouble-category-select"></select>
+            <button onclick="submitTroubleDiagnosis()">Submit Diagnosis</button>
+          </div>
+        </div>
+        <div id="trouble-result" class="trouble-result"></div>
+        <div class="section-title" style="margin-top:18px;">Trouble Call History</div>
+        <table>
+          <thead><tr><th>Ticket</th><th>Fault</th><th>Guess</th><th>Actual</th><th>Result</th></tr></thead>
+          <tbody id="trouble-history-body"></tbody>
+        </table>
+      </div>
+
+      <!-- RUN SCENARIO -->
+      <div id="panel-run" class="panel">
+        <div class="section-title">Run Scenario — Simulator Control</div>
+        <p style="font-size:0.82rem;color:#556;margin-bottom:14px;">
+          Select a scenario and click Run. The simulator will generate new point snapshots,
+          alarm records, and trend data. Switch to Point Browser or Alarms to inspect the result.
+        </p>
+        <div class="run-wrap">
+          <select id="scenario-select">
+            <option value="normal">Normal Operation</option>
+            <option value="chilled_water_degraded">Chilled Water Degraded</option>
+            <option value="isolation_pressure_loss">Isolation Pressure Loss</option>
+            <option value="or_humidity_excursion">OR Humidity Excursion</option>
+          </select>
+          <button onclick="runScenario()">&#9654; Run (12 steps)</button>
+        </div>
+        <div id="run-result"></div>
+        <div style="margin-top:20px;font-size:0.8rem;color:#78909c;">
+          <strong>Scenario reference:</strong><br>
+          <b>Normal</b> — all objects within normal range. Baseline for comparison.<br>
+          <b>Chilled Water Degraded</b> — CHW supply temp rising, diff pressure falling, AHU discharge temp and OR temp creeping up.<br>
+          <b>Isolation Pressure Loss</b> — ISO-201 room pressure drifting toward zero. Critical life-safety alarm.<br>
+          <b>OR Humidity Excursion</b> — OR-1 relative humidity rising above 60% surgical limit.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+let currentEquip = null;
+let allPointsData = null;
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const panels = ['points','alarms','trends','technician','trouble','run'];
+    t.classList.toggle('active', panels[i] === name);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  if (name === 'alarms') loadAlarms();
+  if (name === 'technician') loadTechnician();
+  if (name === 'trouble') loadTroubleCall();
+}
+
+function filterEquip(equip) {
+  currentEquip = equip;
+  document.querySelectorAll('#nav .nav-item').forEach(el => el.classList.remove('active'));
+  const id = equip ? 'nav-' + equip : 'nav-all';
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+  document.getElementById('equip-label').textContent = equip || 'All Objects';
+  renderPoints();
+  showTab('points');
+}
+
+async function loadPoints() {
+  try {
+    const res = await fetch('/api/points');
+    allPointsData = await res.json();
+    document.getElementById('scenario-badge').textContent = 'Scenario: ' + (allPointsData.scenario || '—');
+    const ts = allPointsData.generated_at ? new Date(allPointsData.generated_at).toLocaleString() : '—';
+    document.getElementById('points-meta').textContent =
+      'Last updated: ' + ts + '  |  Data boundary: ' + (allPointsData.data_boundary || 'synthetic lab');
+    renderPoints();
+  } catch(e) {
+    document.getElementById('points-body').innerHTML = '<tr><td colspan="8" style="color:#c62828">Error loading points — is the server running? ' + e + '</td></tr>';
+  }
+}
+
+function renderPoints() {
+  if (!allPointsData) return;
+  const tbody = document.getElementById('points-body');
+  tbody.innerHTML = '';
+  const equip = allPointsData.equipment || {};
+  const keys = currentEquip ? [currentEquip] : Object.keys(equip);
+  for (const eq of keys) {
+    const pts = equip[eq] || [];
+    for (const pt of pts) {
+      const tr = document.createElement('tr');
+      const isAlarm = pt.status === 'alarm';
+      tr.className = isAlarm ? (pt.critical ? 'row-critical' : 'row-alarm') : '';
+      const range = pt.units === 'bool'
+        ? (pt.normal_max === 1 ? 'ON' : 'OFF')
+        : pt.normal_min + ' – ' + pt.normal_max;
+      const displayVal = pt.units === 'bool'
+        ? (pt.value === 1 ? 'ON' : 'OFF')
+        : (pt.value !== null && pt.value !== undefined ? parseFloat(pt.value).toFixed(3) : '—');
+      tr.innerHTML =
+        '<td style="font-family:monospace">' + pt.point + '</td>' +
+        '<td>' + pt.equipment + '</td>' +
+        '<td>' + pt.type + '</td>' +
+        '<td style="font-weight:600">' + displayVal + '</td>' +
+        '<td>' + pt.units + '</td>' +
+        '<td>' + range + '</td>' +
+        '<td>' + (pt.writable ? '<span style="color:#1565c0">Writable</span>' : 'Read') + '</td>' +
+        '<td class="' + (isAlarm ? 'status-alarm' : 'status-normal') + '">' +
+        (pt.overridden ? '<span class="override-flag">OVERRIDE</span> / ' : '') +
+        (isAlarm ? '&#9888; ALARM' : '&#10003; Normal') + '</td>';
+      tbody.appendChild(tr);
+    }
+  }
+}
+
+async function loadTechnician() {
+  if (!allPointsData) await loadPoints();
+  await loadRoles();
+  const tbody = document.getElementById('technician-body');
+  tbody.innerHTML = '';
+  const equip = allPointsData ? allPointsData.equipment || {} : {};
+  Object.keys(equip).forEach(eq => {
+    equip[eq].filter(pt => pt.writable).forEach(pt => {
+      const displayVal = pt.units === 'bool'
+        ? (pt.value === 1 ? 'ON' : 'OFF')
+        : (pt.value !== null && pt.value !== undefined ? parseFloat(pt.value).toFixed(3) : '—');
+      const range = pt.units === 'bool' ? 'ON/OFF' : pt.normal_min + ' – ' + pt.normal_max + ' ' + pt.units;
+      const actions = pt.units === 'bool'
+        ? '<button onclick="commandPoint(\'' + pt.point + '\',1)">Command ON</button>' +
+          '<button onclick="commandPoint(\'' + pt.point + '\',0)">Command OFF</button>'
+        : '<input id="cmd-' + pt.point + '" type="number" step="0.1" value="' + displayVal + '">' +
+          '<button onclick="commandFromInput(\'' + pt.point + '\')">Command Setpoint</button>';
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td style="font-family:monospace">' + pt.point + '</td>' +
+        '<td>' + pt.equipment + '</td>' +
+        '<td style="font-weight:600">' + displayVal + ' ' + pt.units + '</td>' +
+        '<td>' + range + '</td>' +
+        '<td>' + (pt.overridden ? '<span class="override-flag">Active</span><br><span style="font-size:0.72rem;color:#556">' + (pt.operator_note || '') + '</span>' : 'Released') + '</td>' +
+        '<td><div class="tech-actions">' + actions + '<button class="release" onclick="releasePoint(\'' + pt.point + '\')">Release</button></div></td>';
+      tbody.appendChild(tr);
+    });
+  });
+  await loadOperatorLog();
+}
+
+function commandFromInput(point) {
+  const input = document.getElementById('cmd-' + point);
+  if (input) commandPoint(point, input.value);
+}
+
+async function commandPoint(point, value) {
+  const role = selectedRole();
+  const res = await fetch('/api/points/' + point + '/command?value=' + encodeURIComponent(value) + '&role=' + encodeURIComponent(role) + '&operator_id=' + encodeURIComponent('BAS-OPR-01') + '&reason=' + encodeURIComponent('front-end technician panel'), { method: 'POST' });
+  if (!await showCommandResult(res, 'Command')) return;
+  await loadPoints();
+  await loadTechnician();
+}
+
+async function releasePoint(point) {
+  const role = selectedRole();
+  const res = await fetch('/api/points/' + point + '/release?role=' + encodeURIComponent(role) + '&operator_id=' + encodeURIComponent('BAS-OPR-01'), { method: 'POST' });
+  if (!await showCommandResult(res, 'Release')) return;
+  await loadPoints();
+  await loadTechnician();
+}
+
+async function loadRoles() {
+  const select = document.getElementById('tech-role-select');
+  if (!select || select.dataset.loaded === 'true') return;
+  try {
+    const res = await fetch('/api/roles');
+    const data = await res.json();
+    const current = select.value || data.default || 'viewer';
+    select.innerHTML = '';
+    data.roles.forEach(role => {
+      const opt = document.createElement('option');
+      opt.value = role;
+      opt.textContent = role;
+      select.appendChild(opt);
+    });
+    select.value = data.roles.includes(current) ? current : (data.default || 'viewer');
+    select.dataset.loaded = 'true';
+  } catch(e) {
+    setTechnicianStatus('Could not load roles: ' + e, true);
+  }
+}
+
+function selectedRole() {
+  const select = document.getElementById('tech-role-select');
+  return select ? select.value : 'viewer';
+}
+
+function clearTechnicianStatus() {
+  setTechnicianStatus('', false);
+}
+
+function setTechnicianStatus(message, isError) {
+  const el = document.getElementById('technician-status');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = isError ? '#c62828' : '#2e7d32';
+}
+
+async function showCommandResult(res, action) {
+  let data = {};
+  try { data = await res.json(); } catch(e) {}
+  if (!res.ok) {
+    setTechnicianStatus(action + ' denied: ' + (data.detail || res.statusText), true);
+    return false;
+  }
+  setTechnicianStatus(action + ' accepted for role ' + (data.role || selectedRole()) + '.', false);
+  return true;
+}
+
+async function loadOperatorLog() {
+  const tbody = document.getElementById('operator-log-body');
+  try {
+    const res = await fetch('/api/operator-actions');
+    const data = await res.json();
+    tbody.innerHTML = '';
+    if (!data.actions.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#78909c;text-align:center;padding:12px">No synthetic operator actions yet</td></tr>';
+      return;
+    }
+    data.actions.slice().reverse().forEach(a => {
+      const value = a.value === null || a.value === undefined ? '—' : a.value + (a.units ? ' ' + a.units : '');
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + (a.timestamp || '').replace('T',' ').replace('+00:00','Z') + '</td>' +
+        '<td>' + a.action + '</td>' +
+        '<td style="font-family:monospace">' + (a.point || a.scenario || '—') + '</td>' +
+        '<td>' + value + '</td>' +
+        '<td>' + (a.reason || '—') + '</td>';
+      tbody.appendChild(tr);
+    });
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#c62828">Error loading operator log: ' + e + '</td></tr>';
+  }
+}
+
+let activeTroubleTicket = null;
+
+async function requestTroubleCall() {
+  const result = document.getElementById('trouble-result');
+  result.className = 'trouble-result';
+  result.textContent = '';
+  const res = await fetch('/api/trouble-calls/new', { method: 'POST' });
+  const data = await res.json();
+  if (res.status === 409) {
+    activeTroubleTicket = data.detail;
+    renderTroubleCall({
+      active: true,
+      ticket_id: data.detail.ticket_id,
+      symptom_text: data.detail.symptom_text
+    });
+    result.className = 'trouble-result incorrect';
+    result.textContent = data.detail.message || 'A trouble-call ticket is already open.';
+    return;
+  }
+  if (!res.ok) {
+    result.className = 'trouble-result incorrect';
+    result.textContent = data.detail || 'Could not request trouble call.';
+    return;
+  }
+  await loadTroubleCall();
+  await loadPoints();
+  await loadAlarms();
+}
+
+async function loadTroubleCall() {
+  const res = await fetch('/api/trouble-calls/active');
+  const data = await res.json();
+  renderTroubleOptions(data.equipment_options || [], data.category_options || []);
+  renderTroubleCall(data);
+  await loadTroubleHistory();
+}
+
+function renderTroubleOptions(equipment, categories) {
+  const eq = document.getElementById('trouble-equipment-select');
+  const cat = document.getElementById('trouble-category-select');
+  eq.innerHTML = equipment.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+  cat.innerHTML = categories.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+}
+
+function renderTroubleCall(data) {
+  activeTroubleTicket = data.active === false ? null : data;
+  document.getElementById('trouble-empty').style.display = activeTroubleTicket ? 'none' : 'block';
+  document.getElementById('trouble-active').style.display = activeTroubleTicket ? 'block' : 'none';
+  if (activeTroubleTicket) {
+    document.getElementById('trouble-symptom').textContent =
+      'Ticket ' + activeTroubleTicket.ticket_id + ': ' + activeTroubleTicket.symptom_text;
+  }
+}
+
+async function submitTroubleDiagnosis() {
+  if (!activeTroubleTicket) return;
+  const payload = {
+    guessed_equipment: document.getElementById('trouble-equipment-select').value,
+    guessed_category: document.getElementById('trouble-category-select').value
+  };
+  const res = await fetch('/api/trouble-calls/' + activeTroubleTicket.ticket_id + '/diagnose', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  const result = document.getElementById('trouble-result');
+  if (!res.ok) {
+    result.className = 'trouble-result incorrect';
+    result.textContent = data.detail || 'Diagnosis failed.';
+    return;
+  }
+  result.className = 'trouble-result ' + (data.correct ? 'correct' : 'incorrect');
+  result.textContent =
+    (data.correct ? 'Correct' : 'Incorrect') +
+    ' — actual: ' + data.actual_equipment + ' / ' + data.actual_category +
+    '. ' + data.explanation;
+  activeTroubleTicket = null;
+  await loadTroubleCall();
+}
+
+async function loadTroubleHistory() {
+  const res = await fetch('/api/trouble-calls/history');
+  const data = await res.json();
+  const tbody = document.getElementById('trouble-history-body');
+  tbody.innerHTML = '';
+  if (!data.history || !data.history.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#78909c;text-align:center;padding:12px">No diagnosed trouble calls yet</td></tr>';
+    return;
+  }
+  data.history.slice().reverse().forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + row.ticket_id + '</td>' +
+      '<td style="font-family:monospace">' + row.fault_id + '</td>' +
+      '<td>' + row.guessed_equipment + ' / ' + row.guessed_category + '</td>' +
+      '<td>' + row.actual_equipment + ' / ' + row.actual_category + '</td>' +
+      '<td class="' + (row.correct ? 'status-normal' : 'status-alarm') + '">' + (row.correct ? 'Correct' : 'Incorrect') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadAlarms() {
+  try {
+    const res = await fetch('/api/alarms');
+    const data = await res.json();
+    const sum = document.getElementById('alarm-summary');
+    const bp = data.by_priority || {};
+    if (data.count === 0) {
+      sum.innerHTML = '<div class="alarm-count-box none">&#10003; No Active Alarms</div>';
+    } else {
+      sum.innerHTML = '';
+      if (bp.critical) sum.innerHTML += '<div class="alarm-count-box critical">Critical: ' + bp.critical + '</div>';
+      if (bp.high)     sum.innerHTML += '<div class="alarm-count-box high">High: ' + bp.high + '</div>';
+      if (bp.medium)   sum.innerHTML += '<div class="alarm-count-box medium">Medium: ' + bp.medium + '</div>';
+    }
+    const tbody = document.getElementById('alarms-body');
+    tbody.innerHTML = '';
+    if (data.alarms.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="color:#2e7d32;text-align:center;padding:16px">No active alarms</td></tr>';
+      return;
+    }
+    data.alarms.forEach((a, i) => {
+      const tr = document.createElement('tr');
+      tr.id = 'alarm-row-' + i;
+      tr.className = a.priority === 'critical' ? 'row-critical' : 'row-alarm';
+      const range = a.normal_min + ' – ' + a.normal_max;
+      tr.innerHTML =
+        '<td>' + (a.timestamp || '').replace('T',' ').replace('+00:00','Z') + '</td>' +
+        '<td><span class="pri pri-' + a.priority + '">' + a.priority.toUpperCase() + '</span></td>' +
+        '<td style="font-family:monospace">' + a.point + '</td>' +
+        '<td>' + a.equipment + '</td>' +
+        '<td>' + a.message + '</td>' +
+        '<td style="font-weight:600;color:#c62828">' + parseFloat(a.value).toFixed(4) + ' ' + a.units + '</td>' +
+        '<td>' + range + ' ' + a.units + '</td>' +
+        '<td><button class="btn-ack" onclick="ackAlarm(' + i + ')">Ack</button></td>';
+      tbody.appendChild(tr);
+    });
+  } catch(e) {
+    document.getElementById('alarms-body').innerHTML = '<tr><td colspan="8" style="color:#c62828">Error: ' + e + '</td></tr>';
+  }
+}
+
+function ackAlarm(i) {
+  const row = document.getElementById('alarm-row-' + i);
+  if (row) row.classList.add('acked');
+}
+
+async function loadTrend() {
+  const pt = document.getElementById('trend-point-select').value;
+  if (!pt) return;
+  try {
+    const res = await fetch('/api/trends/' + pt);
+    const data = await res.json();
+    const tbody = document.getElementById('trend-body');
+    tbody.innerHTML = '';
+    const vals = [];
+    data.rows.forEach(r => {
+      vals.push(parseFloat(r.value));
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + (r.timestamp || '').replace('T',' ').replace('+00:00','Z') + '</td>' +
+        '<td style="font-family:monospace">' + r.point + '</td>' +
+        '<td>' + r.equipment + '</td>' +
+        '<td style="font-weight:600">' + parseFloat(r.value).toFixed(4) + '</td>' +
+        '<td>' + r.units + '</td>';
+      tbody.appendChild(tr);
+    });
+    drawSparkline(vals, pt);
+  } catch(e) {
+    document.getElementById('trend-body').innerHTML = '<tr><td colspan="5" style="color:#c62828">No trend data for ' + pt + ' — run a scenario first.</td></tr>';
+    clearSparkline();
+  }
+}
+
+function drawSparkline(vals, label) {
+  const canvas = document.getElementById('sparkline');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, pad = 20;
+  ctx.clearRect(0,0,W,H);
+  if (!vals.length) return;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  ctx.strokeStyle = '#003366'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  vals.forEach((v, i) => {
+    const x = pad + (i / (vals.length - 1)) * (W - 2*pad);
+    const y = H - pad - ((v - min) / range) * (H - 2*pad);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = '#003366';
+  vals.forEach((v, i) => {
+    const x = pad + (i / (vals.length - 1)) * (W - 2*pad);
+    const y = H - pad - ((v - min) / range) * (H - 2*pad);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 2*Math.PI); ctx.fill();
+  });
+  ctx.fillStyle = '#556'; ctx.font = '10px monospace';
+  ctx.fillText(label + ' — ' + vals.length + ' samples  min:' + min.toFixed(3) + '  max:' + max.toFixed(3), pad, 12);
+}
+
+function clearSparkline() {
+  const canvas = document.getElementById('sparkline');
+  canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+}
+
+async function runScenario() {
+  const sc = document.getElementById('scenario-select').value;
+  const btn = document.querySelector('.run-wrap button');
+  btn.disabled = true; btn.textContent = 'Running…';
+  try {
+    const res = await fetch('/api/run/' + sc, { method: 'POST' });
+    const data = await res.json();
+    const el = document.getElementById('run-result');
+    el.style.display = 'block';
+    el.textContent = 'Done — scenario: ' + data.scenario +
+      '  |  steps: ' + data.steps +
+      '  |  alarms generated: ' + data.alarm_count +
+      '  |  generated at: ' + (data.generated_at || '—');
+    document.getElementById('scenario-badge').textContent = 'Scenario: ' + data.scenario;
+    await loadPoints();
+  } catch(e) {
+    const el = document.getElementById('run-result');
+    el.style.display = 'block'; el.style.background = '#ffebee';
+    el.textContent = 'Error running scenario: ' + e;
+  } finally {
+    btn.disabled = false; btn.textContent = '▶ Run (12 steps)';
+  }
+}
+
+// Init
+filterEquip(null);
+loadPoints();
+loadRoles();
+loadTroubleCall();
+</script>
+</body>
+</html>

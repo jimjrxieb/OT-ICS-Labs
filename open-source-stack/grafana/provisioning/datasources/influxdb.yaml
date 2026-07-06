@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: BAS-InfluxDB
+    type: influxdb
+    uid: bas-influxdb
+    access: proxy
+    url: http://influxdb:8086
+    editable: true
+    jsonData:
+      version: Flux
+      organization: bas-lab
+      defaultBucket: bas-trends
+      tlsSkipVerify: true
+    secureJsonData:
+      token: baslab-local-token-2026

@@ -1,0 +1,255 @@
+[
+  {
+    "fault_id": "AHU_OR1_SAT_SENSOR_DRIFT",
+    "equipment": "AHU-OR-1",
+    "category": "sensor_failure",
+    "symptom_text": "OR-1 staff reporting the room feels colder than the thermostat suggests.",
+    "affected_points": ["AHU_OR1_SAT"],
+    "injection": [
+      {"point": "AHU_OR1_SAT", "mode": "drift", "rate_per_step": -0.4, "start_step": 3}
+    ],
+    "correct_equipment": "AHU-OR-1",
+    "correct_category": "sensor_failure",
+    "explanation": "AHU_OR1_SAT drifted downward independent of OR1_TEMP and setpoint -- classic stuck or miscalibrated sensor behavior."
+  },
+  {
+    "fault_id": "AHU_OR1_FAN_FAILURE",
+    "equipment": "AHU-OR-1",
+    "category": "mechanical_failure",
+    "symptom_text": "OR-1 supply air is not improving even though the air handler is commanded to run.",
+    "affected_points": ["AHU_OR1_FAN_CMD", "AHU_OR1_SAT"],
+    "injection": [
+      {"point": "AHU_OR1_FAN_CMD", "mode": "stuck", "rate_per_step": 0, "start_step": 0, "value": 1},
+      {"point": "AHU_OR1_SAT", "mode": "drift", "rate_per_step": 0.35, "start_step": 2}
+    ],
+    "correct_equipment": "AHU-OR-1",
+    "correct_category": "mechanical_failure",
+    "explanation": "The fan command stayed on while AHU_OR1_SAT warmed instead of responding, pointing to a fan or airflow mechanical failure rather than an operator command issue."
+  },
+  {
+    "fault_id": "VAV_OR101_DAMPER_STUCK",
+    "equipment": "VAV-OR-101",
+    "category": "actuator_stuck",
+    "symptom_text": "OR-1 room temperature keeps drifting from setpoint while the main air handler trend looks stable.",
+    "affected_points": ["OR1_TEMP", "OR1_TEMP_SP", "AHU_OR1_SAT"],
+    "injection": [
+      {"point": "AHU_OR1_SAT", "mode": "stuck", "rate_per_step": 0, "start_step": 0, "value": 55.0},
+      {"point": "OR1_TEMP", "mode": "drift", "rate_per_step": 0.28, "start_step": 3}
+    ],
+    "correct_equipment": "VAV-OR-101",
+    "correct_category": "actuator_stuck",
+    "explanation": "AHU_OR1_SAT held normal while OR1_TEMP moved away from OR1_TEMP_SP, which points downstream at the VAV damper or actuator."
+  },
+  {
+    "fault_id": "ISO201_EXHAUST_FAILURE",
+    "equipment": "RM-ISO-201",
+    "category": "mechanical_failure",
+    "symptom_text": "Isolation Room 201 pressure alarm is active and nursing reports the room will not hold negative pressure.",
+    "affected_points": ["ISO201_PRESSURE", "ISO201_EXH_CMD"],
+    "injection": [
+      {"point": "ISO201_EXH_CMD", "mode": "stuck", "rate_per_step": 0, "start_step": 0, "value": 1},
+      {"point": "ISO201_PRESSURE", "mode": "drift", "rate_per_step": 0.002, "start_step": 2}
+    ],
+    "correct_equipment": "RM-ISO-201",
+    "correct_category": "mechanical_failure",
+    "explanation": "ISO201_EXH_CMD remained on while ISO201_PRESSURE drifted positive, indicating the exhaust system was not producing the expected pressure response."
+  },
+  {
+    "fault_id": "ISO201_EXH_CMD_MISMATCH",
+    "equipment": "RM-ISO-201",
+    "category": "actuator_stuck",
+    "symptom_text": "Isolation Room 201 intermittently loses negative pressure after a local controller change.",
+    "affected_points": ["ISO201_EXH_CMD", "ISO201_PRESSURE"],
+    "injection": [
+      {"point": "ISO201_EXH_CMD", "mode": "stuck", "rate_per_step": 0, "start_step": 4, "value": 0},
+      {"point": "ISO201_PRESSURE", "mode": "drift", "rate_per_step": 0.0015, "start_step": 4}
+    ],
+    "correct_equipment": "RM-ISO-201",
+    "correct_category": "actuator_stuck",
+    "explanation": "The command state changed off while the room pressure moved toward neutral, showing a command/output mismatch or stuck actuator path."
+  },
+  {
+    "fault_id": "CHW_PLANT_LOW_DELTA_T",
+    "equipment": "CHW-PLANT-1",
+    "category": "actuator_stuck",
+    "symptom_text": "Several cooling zones are warm and the chilled water plant looks loaded but ineffective.",
+    "affected_points": ["CHW_SUPPLY_TEMP", "CHW_DIFF_PRESSURE", "AHU_OR1_CHW_VLV_POS"],
+    "injection": [
+      {"point": "CHW_SUPPLY_TEMP", "mode": "drift", "rate_per_step": 0.35, "start_step": 2},
+      {"point": "CHW_DIFF_PRESSURE", "mode": "drift", "rate_per_step": -0.28, "start_step": 2},
+      {"point": "AHU_OR1_CHW_VLV_POS", "mode": "stuck", "rate_per_step": 0, "start_step": 0, "value": 92.0}
+    ],
+    "correct_equipment": "CHW-PLANT-1",
+    "correct_category": "actuator_stuck",
+    "explanation": "CHW_SUPPLY_TEMP rose while CHW_DIFF_PRESSURE fell and the valve stayed high, a low-delta-T control or valve-modulation problem."
+  },
+  {
+    "fault_id": "HW_PLANT_SENSOR_FAILURE",
+    "equipment": "HW-PLANT-1",
+    "category": "sensor_failure",
+    "symptom_text": "Hot water plant display is not changing during load changes, but there are no matching comfort complaints.",
+    "affected_points": ["HW_SUPPLY_TEMP"],
+    "injection": [
+      {"point": "HW_SUPPLY_TEMP", "mode": "noise_flatline", "rate_per_step": 0, "start_step": 2, "value": 146.0}
+    ],
+    "correct_equipment": "HW-PLANT-1",
+    "correct_category": "sensor_failure",
+    "explanation": "HW_SUPPLY_TEMP flatlined at one value instead of showing normal process movement, which is a sensor signal fault signature."
+  },
+  {
+    "fault_id": "OR1_RH_SENSOR_VS_REAL_EXCURSION",
+    "equipment": "VAV-OR-101",
+    "category": "sensor_failure",
+    "symptom_text": "OR-1 humidity reading is questionable and staff are asking whether this is a sensor problem or a real room condition.",
+    "affected_points": ["OR1_RH", "AHU_OR1_SAT"],
+    "variants": [
+      {
+        "variant_id": "sensor_flatline",
+        "category": "sensor_failure",
+        "correct_category": "sensor_failure",
+        "injection": [
+          {"point": "OR1_RH", "mode": "noise_flatline", "rate_per_step": 0, "start_step": 1, "value": 64.0},
+          {"point": "AHU_OR1_SAT", "mode": "stuck", "rate_per_step": 0, "start_step": 0, "value": 55.0}
+        ],
+        "explanation": "OR1_RH flatlined high while AHU_OR1_SAT stayed normal, so the reading behaves like a humidity sensor fault."
+      },
+      {
+        "variant_id": "real_excursion",
+        "category": "control_loop_fault",
+        "correct_category": "control_loop_fault",
+        "injection": [
+          {"point": "OR1_RH", "mode": "drift", "rate_per_step": 0.65, "start_step": 2},
+          {"point": "AHU_OR1_SAT", "mode": "drift", "rate_per_step": 0.12, "start_step": 3}
+        ],
+        "explanation": "OR1_RH rose over time with a related supply-air trend change, making it a real humidity/control response problem rather than a flatlined sensor."
+      }
+    ],
+    "injection": [
+      {"point": "OR1_RH", "mode": "noise_flatline", "rate_per_step": 0, "start_step": 1, "value": 64.0}
+    ],
+    "correct_equipment": "VAV-OR-101",
+    "correct_category": "sensor_failure",
+    "explanation": "This ticket randomly selects either a humidity sensor flatline or a real humidity excursion; compare OR1_RH against AHU_OR1_SAT behavior."
+  },
+  {
+    "fault_id": "AHU_OR1_DRAIN_SAFETY_TRIP",
+    "equipment": "AHU-OR-1",
+    "category": "mechanical_failure",
+    "symptom_text": "AHU-OR-1 tripped off overnight, high-priority alarm active, OR staff want it back online.",
+    "affected_points": ["AHU_OR1_STRAINER_DP", "AHU_OR1_CHW_VLV_POS", "AHU_OR1_DRAIN_SWITCH", "AHU_OR1_FAN_CMD"],
+    "injection": [
+      {"point": "AHU_OR1_STRAINER_DP", "mode": "drift", "rate_per_step": 0.55, "start_step": 2},
+      {"point": "AHU_OR1_CHW_VLV_POS", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 88.0},
+      {
+        "point": "AHU_OR1_DRAIN_SWITCH",
+        "mode": "stuck",
+        "rate_per_step": 0,
+        "start_step": 8,
+        "value": 1,
+        "forces": {
+          "AHU_OR1_FAN_CMD": 0,
+          "raise_alarm": {
+            "priority": "high",
+            "message": "AHU-OR-1 condensate pan high-level safety trip"
+          }
+        }
+      }
+    ],
+    "correct_equipment": "AHU-OR-1",
+    "correct_category": "mechanical_failure",
+    "explanation": "AHU_OR1_STRAINER_DP climbed first and AHU_OR1_CHW_VLV_POS stayed abnormally high before AHU_OR1_DRAIN_SWITCH tripped and forced AHU_OR1_FAN_CMD off. The root chain is dirty strainer plus leaking valve actuator causing excess condensate and a drain pan safety shutdown."
+  },
+  {
+    "fault_id": "RTU1_ECON_DAMPER_STUCK",
+    "equipment": "RTU-1",
+    "category": "actuator_stuck",
+    "symptom_text": "Floor 3 tenants report their space has been getting warmer all morning.",
+    "affected_points": ["RTU1_OA_DAMPER_POS", "RTU1_MA_TEMP", "RTU1_SAT"],
+    "injection": [
+      {"point": "RTU1_OA_DAMPER_POS", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 10.0},
+      {"point": "RTU1_MA_TEMP", "mode": "drift", "rate_per_step": 1.15, "start_step": 2},
+      {"point": "RTU1_SAT", "mode": "drift", "rate_per_step": 0.45, "start_step": 3}
+    ],
+    "correct_equipment": "RTU-1",
+    "correct_category": "actuator_stuck",
+    "explanation": "RTU1_OA_DAMPER_POS stayed pinned near minimum while RTU1_MA_TEMP tracked warm return-air conditions and RTU1_SAT drifted high. That is an upstream RTU economizer actuator fault, not a zone-level problem."
+  },
+  {
+    "fault_id": "VAV301_REHEAT_STUCK_OPEN",
+    "equipment": "VAV-301",
+    "category": "actuator_stuck",
+    "symptom_text": "Floor 3 tenants report their space has been getting warmer all morning.",
+    "affected_points": ["VAV301_REHEAT_VLV_POS", "VAV301_TEMP", "RTU1_SAT"],
+    "injection": [
+      {"point": "RTU1_SAT", "mode": "stuck", "rate_per_step": 0, "start_step": 0, "value": 55.0},
+      {"point": "VAV301_REHEAT_VLV_POS", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 95.0},
+      {"point": "VAV301_TEMP", "mode": "drift", "rate_per_step": 0.65, "start_step": 2}
+    ],
+    "correct_equipment": "VAV-301",
+    "correct_category": "actuator_stuck",
+    "explanation": "RTU1_SAT stayed normal while VAV301_TEMP rose and VAV301_REHEAT_VLV_POS was pinned far above its normal band. The problem is downstream at the VAV box, not the RTU."
+  },
+  {
+    "fault_id": "RTU1_SAT_SENSOR_FAILURE",
+    "equipment": "RTU-1",
+    "category": "sensor_failure",
+    "symptom_text": "Energy report shows RTU-1 discharge temp hasn't moved in days; something seems off.",
+    "affected_points": ["RTU1_SAT", "RTU1_MA_TEMP", "VAV301_TEMP"],
+    "injection": [
+      {"point": "RTU1_SAT", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 55.2}
+    ],
+    "correct_equipment": "RTU-1",
+    "correct_category": "sensor_failure",
+    "explanation": "RTU1_SAT flatlined at the exact same value while RTU1_MA_TEMP and zone temperature continued to move. A live thermistor should show some noise, so the perfectly flat trend points to a failed discharge-air sensor."
+  },
+  {
+    "fault_id": "CHILLER1_CAPACITY_LOSS",
+    "equipment": "CHILLER-1",
+    "category": "mechanical_failure",
+    "symptom_text": "Multiple office floors warm this afternoon; RTU seems to be running flat out.",
+    "affected_points": ["CHILLER1_CHW_SUPPLY_TEMP", "RTU1_SAT"],
+    "injection": [
+      {"point": "CHILLER1_CHW_SUPPLY_TEMP", "mode": "drift", "rate_per_step": 0.65, "start_step": 2},
+      {"point": "RTU1_SAT", "mode": "drift", "rate_per_step": 0.30, "start_step": 3}
+    ],
+    "correct_equipment": "CHILLER-1",
+    "correct_category": "mechanical_failure",
+    "explanation": "CHILLER1_CHW_SUPPLY_TEMP climbed past its alarm limit and RTU1_SAT rose in sympathy. When multiple downstream loads are warm together, the chilled-water plant capacity is the giveaway."
+  },
+  {
+    "fault_id": "BOILER1_FLAME_FAILURE",
+    "equipment": "BOILER-1",
+    "category": "mechanical_failure",
+    "symptom_text": "Morning warm-up complaints — zones cold, reheat running hard but not recovering.",
+    "affected_points": ["BOILER1_HW_SUPPLY_TEMP", "VAV301_REHEAT_VLV_POS"],
+    "injection": [
+      {"point": "BOILER1_HW_SUPPLY_TEMP", "mode": "drift", "rate_per_step": -1.25, "start_step": 2},
+      {"point": "VAV301_REHEAT_VLV_POS", "mode": "drift", "rate_per_step": 8.0, "start_step": 2}
+    ],
+    "correct_equipment": "BOILER-1",
+    "correct_category": "mechanical_failure",
+    "explanation": "VAV301_REHEAT_VLV_POS rose as the zone called for heat, but BOILER1_HW_SUPPLY_TEMP fell below its normal band. Open valves plus a falling hot-water source points to boiler flame/capacity failure."
+  },
+  {
+    "fault_id": "OFFICE_JACE_COMMS_LOSS",
+    "equipment": "JACE-OFFICE-01",
+    "category": "comms_loss",
+    "symptom_text": "Office building tenants calling about comfort, but every office point on the front end reads exactly the same as an hour ago.",
+    "affected_points": ["RTU1_SAT", "RTU1_SAT_SP", "RTU1_SUPPLY_FAN_CMD", "RTU1_OA_DAMPER_POS", "RTU1_MA_TEMP", "VAV301_TEMP", "VAV301_TEMP_SP", "VAV301_REHEAT_VLV_POS", "CHILLER1_CHW_SUPPLY_TEMP", "BOILER1_HW_SUPPLY_TEMP"],
+    "injection": [
+      {"point": "RTU1_SAT", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 55.0, "forces": {"raise_alarm": {"priority": "high", "message": "JACE-OFFICE-01 offline — office building points stale"}}},
+      {"point": "RTU1_SAT_SP", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 55.0},
+      {"point": "RTU1_SUPPLY_FAN_CMD", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 1},
+      {"point": "RTU1_OA_DAMPER_POS", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 35.0},
+      {"point": "RTU1_MA_TEMP", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 64.0},
+      {"point": "VAV301_TEMP", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 72.0},
+      {"point": "VAV301_TEMP_SP", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 72.0},
+      {"point": "VAV301_REHEAT_VLV_POS", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 12.0},
+      {"point": "CHILLER1_CHW_SUPPLY_TEMP", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 44.0},
+      {"point": "BOILER1_HW_SUPPLY_TEMP", "mode": "stuck", "rate_per_step": 0, "start_step": 1, "value": 145.0}
+    ],
+    "correct_equipment": "JACE-OFFICE-01",
+    "correct_category": "comms_loss",
+    "explanation": "All office points froze at plausible in-range values at the same time while hospital points kept varying. That is not ten simultaneous sensor failures; it points to JACE-OFFICE-01 or its network path going stale."
+  }
+]

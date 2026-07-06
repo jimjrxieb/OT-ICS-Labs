@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAS JAX Regional Medical Center — BAS</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: #16213e; border-bottom: 2px solid #0f3460; padding: 18px 32px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 1.2rem; font-weight: 600; color: #e0e0e0; letter-spacing: 0.04em; }
+  header .badge { background: #0f3460; color: #4fc3f7; font-size: 0.7rem; padding: 3px 10px; border-radius: 12px; border: 1px solid #4fc3f7; }
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; gap: 40px; }
+  .subtitle { color: #90a4ae; font-size: 0.95rem; text-align: center; }
+  .cards { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; }
+  .card { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; width: 320px; padding: 32px; display: flex; flex-direction: column; gap: 12px; transition: border-color 0.2s, transform 0.15s; text-decoration: none; color: inherit; }
+  .card:hover { border-color: #4fc3f7; transform: translateY(-3px); }
+  .card-icon { font-size: 2.4rem; }
+  .card-title { font-size: 1.1rem; font-weight: 600; color: #e0e0e0; }
+  .card-vendor { font-size: 0.75rem; color: #78909c; letter-spacing: 0.06em; text-transform: uppercase; }
+  .card-desc { font-size: 0.85rem; color: #90a4ae; line-height: 1.6; }
+  .card-role { font-size: 0.8rem; color: #4fc3f7; border-top: 1px solid #0f3460; padding-top: 12px; margin-top: 4px; }
+  footer { text-align: center; padding: 16px; font-size: 0.75rem; color: #37474f; border-top: 1px solid #0f3460; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NAS JAX Regional Medical Center — Building Automation System</h1>
+  <span class="badge">SYNTHETIC LAB</span>
+</header>
+<main>
+  <p class="subtitle">Select a front-end platform to open the operator view.</p>
+  <div class="cards">
+    <a class="card" href="/metasys">
+      <div class="card-icon">🖥</div>
+      <div class="card-title">Metasys ADS</div>
+      <div class="card-vendor">Johnson Controls</div>
+      <div class="card-desc">
+        Site &rsaquo; Network &rsaquo; Equipment &rsaquo; Point browser.
+        ADS-style operator interface with alarm panel and trend viewer.
+        Covers AHU-OR-1, ICU AHU, CHW/HW plant, and VAV controllers.
+      </div>
+      <div class="card-role">Role: Main BAS front end — all JCI equipment + integration</div>
+    </a>
+    <a class="card" href="/niagara">
+      <div class="card-icon">🔧</div>
+      <div class="card-title">Niagara Supervisor</div>
+      <div class="card-vendor">Tridium / Niagara 4</div>
+      <div class="card-desc">
+        Station &rsaquo; JACE &rsaquo; Component ORD-path browser.
+        Workbench-style engineering view with module tree, slot display,
+        and History Extension trend viewer.
+      </div>
+      <div class="card-role">Role: Integration supervisor — cross-vendor + ISO room JACE</div>
+    </a>
+  </div>
+  <p class="subtitle" style="font-size:0.8rem;">
+    API: <a href="/docs" style="color:#4fc3f7;">/docs</a> &nbsp;|&nbsp;
+    Terminal: <code style="color:#4fc3f7;">python3 bas_console.py</code>
+  </p>
+</main>
+<footer>Synthetic lab data only &mdash; no real hospital, PHI, or production systems &mdash; NAS JAX Regional Medical Center BAS Simulator</footer>
+</body>
+</html>

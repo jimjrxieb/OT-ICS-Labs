@@ -1,0 +1,64 @@
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: bas-mosquitto
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: bas-influxdb
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: baslab2026
+      DOCKER_INFLUXDB_INIT_ORG: bas-lab
+      DOCKER_INFLUXDB_INIT_BUCKET: bas-trends
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: baslab-local-token-2026
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: bas-grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: baslab2026
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+  nodered:
+    image: nodered/node-red:3.1.9
+    container_name: bas-nodered
+    ports:
+      - "127.0.0.1:1880:1880"
+    environment:
+      TZ: America/New_York
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./flows/bas-poll-flow.json:/data/flows/bas-poll-flow.json:ro
+      - ./nodered/package.json:/data/package.json
+      - nodered-data:/data
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+  grafana-data:
+  nodered-data:

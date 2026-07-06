@@ -63,6 +63,11 @@ def load_alarm_rules() -> dict[str, dict[str, Any]]:
     return {item["point"]: item for item in raw}
 
 
+def load_fault_library() -> dict[str, dict[str, Any]]:
+    raw = json.loads((INPUT_DIR / "fault_library.json").read_text(encoding="utf-8"))
+    return {item["fault_id"]: item for item in raw}
+
+
 def bool_value(point: Point) -> int:
     return int(point.normal_max)
 
@@ -99,6 +104,69 @@ def scenario_value(point: Point, scenario: str, step: int, rng: random.Random) -
             return round(61.5 + min(step * 0.45, 8.0), 3)
 
     return value
+
+
+def select_fault_variant(fault: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+    variants = fault.get("variants") or []
+    if not variants:
+        return fault
+    variant = rng.choice(variants)
+    selected = dict(fault)
+    selected["category"] = variant.get("category", fault["category"])
+    selected["correct_category"] = variant.get("correct_category", fault["correct_category"])
+    selected["injection"] = variant["injection"]
+    selected["explanation"] = variant.get("explanation", fault["explanation"])
+    selected["variant_id"] = variant.get("variant_id")
+    return selected
+
+
+def injected_value(point: Point, base_value: float, directive: dict[str, Any], step: int) -> float:
+    start_step = int(directive.get("start_step", 0))
+    if step < start_step:
+        return base_value
+
+    mode = directive["mode"]
+    if mode == "drift":
+        return round(base_value + float(directive.get("rate_per_step", 0)) * (step - start_step + 1), 4)
+    if mode in {"stuck", "step", "noise_flatline"}:
+        return float(directive.get("value", base_value))
+    raise ValueError(f"Unknown fault injection mode {mode!r} for {point.name}")
+
+
+def apply_fault(
+    snapshot: dict[str, float],
+    fault: dict[str, Any],
+    points_by_name: dict[str, Point],
+    step: int,
+) -> tuple[dict[str, float], list[dict[str, Any]]]:
+    forced_alarms: list[dict[str, Any]] = []
+    for directive in fault["injection"]:
+        point_name = directive["point"]
+        point = points_by_name[point_name]
+        value = injected_value(point, snapshot[point_name], directive, step)
+        if point.units == "bool":
+            value = int(value)
+        snapshot[point_name] = value
+
+        if step >= int(directive.get("start_step", 0)):
+            forces = directive.get("forces") or {}
+            for forced_point, forced_value in forces.items():
+                if forced_point == "raise_alarm":
+                    continue
+                snapshot[forced_point] = forced_value
+            if "raise_alarm" in forces and step == int(directive.get("start_step", 0)):
+                forced_alarms.append(
+                    {
+                        "point": point_name,
+                        "equipment": point.equipment,
+                        "value": snapshot[point_name],
+                        "normal_min": point.normal_min,
+                        "normal_max": point.normal_max,
+                        "units": point.units,
+                        **forces["raise_alarm"],
+                    }
+                )
+    return snapshot, forced_alarms
 
 
 def alarm_for(point: Point, value: float, rules: dict[str, dict[str, Any]], ts: str) -> dict[str, Any] | None:
@@ -182,10 +250,19 @@ def summary_lines(alarms: list[dict[str, Any]]) -> list[str]:
     return [f"- {key}: {count}" for key, count in sorted(counts.items())]
 
 
-def run_simulation(scenario: str, steps: int, seed: int) -> None:
+def run_simulation(scenario: str, steps: int, seed: int, fault_id: str | None = None) -> None:
     rng = random.Random(seed)
     points = load_points()
     rules = load_alarm_rules()
+    points_by_name = {point.name: point for point in points}
+    fault = None
+    run_label = scenario
+    if fault_id:
+        faults = load_fault_library()
+        if fault_id not in faults:
+            raise SystemExit(f"Unknown fault {fault_id!r}")
+        fault = select_fault_variant(faults[fault_id], rng)
+        run_label = fault_id
     start = datetime(2026, 6, 25, 12, 0, tzinfo=timezone.utc)
     snapshots: list[dict[str, Any]] = []
     alarms: list[dict[str, Any]] = []
@@ -197,10 +274,17 @@ def run_simulation(scenario: str, steps: int, seed: int) -> None:
         for point in points:
             value = scenario_value(point, scenario, step, rng)
             snapshot[point.name] = value
+
+        forced_alarms: list[dict[str, Any]] = []
+        if fault:
+            snapshot, forced_alarms = apply_fault(snapshot, fault, points_by_name, step)
+
+        for point in points:
+            value = snapshot[point.name]
             trends.append(
                 {
                     "timestamp": ts,
-                    "scenario": scenario,
+                    "scenario": run_label,
                     "point": point.name,
                     "equipment": point.equipment,
                     "value": value,
@@ -210,26 +294,29 @@ def run_simulation(scenario: str, steps: int, seed: int) -> None:
             alarm = alarm_for(point, value, rules, ts)
             if alarm:
                 alarms.append(alarm)
+        for alarm in forced_alarms:
+            alarms.append({"timestamp": ts, **alarm})
         snapshots.append({"timestamp": ts, "points": snapshot})
 
-    write_outputs(scenario, snapshots, alarms, trends)
+    write_outputs(run_label, snapshots, alarms, trends)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Synthetic hospital BAS simulator")
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--scenario",
         choices=["normal", "chilled_water_degraded", "isolation_pressure_loss", "or_humidity_excursion"],
-        default="normal",
+        default=None,
     )
+    group.add_argument("--fault", help="Fault ID from data/input/fault_library.json")
     parser.add_argument("--steps", type=int, default=12)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
     if args.steps < 1:
         raise SystemExit("--steps must be >= 1")
-    run_simulation(args.scenario, args.steps, args.seed)
+    run_simulation(args.scenario or "normal", args.steps, args.seed, args.fault)
 
 
 if __name__ == "__main__":
     main()
-

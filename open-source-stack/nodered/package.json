@@ -1,0 +1,8 @@
+{
+  "name": "bas-lab-nodered",
+  "version": "1.0.0",
+  "description": "BAS Lab Node-RED instance — NAS JAX Synthetic Hospital",
+  "dependencies": {
+    "node-red-contrib-influxdb": "0.6.1"
+  }
+}

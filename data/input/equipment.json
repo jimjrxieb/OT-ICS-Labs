@@ -1,25 +1,39 @@
 {
-  "facility": {
-    "name": "Synthetic Regional Medical Center",
-    "beds": 180,
-    "critical_spaces": ["OR Suite", "ICU", "Isolation Rooms", "Pharmacy", "Imaging", "Sterile Processing", "ED Trauma"]
-  },
+  "facilities": [
+    {
+      "id": "hospital",
+      "name": "NAS JAX Regional Medical Center",
+      "beds": 180,
+      "critical_spaces": ["OR Suite", "ICU", "Isolation Rooms", "Pharmacy", "Imaging", "Sterile Processing", "ED Trauma"]
+    },
+    {
+      "id": "office",
+      "name": "Riverside Office Tower",
+      "floors": 8,
+      "critical_spaces": ["Data Closet"]
+    }
+  ],
   "equipment": [
-    {"id": "AHU-OR-1", "type": "AHU", "serves": "OR Suite", "vendor": "Trane", "controller": "TRN-UC-OR1", "purdue_level": 1},
-    {"id": "AHU-ICU-1", "type": "AHU", "serves": "ICU", "vendor": "Johnson Controls", "controller": "JCI-FEC-ICU1", "purdue_level": 1},
-    {"id": "VAV-OR-101", "type": "VAV", "serves": "OR-1", "vendor": "Johnson Controls", "controller": "JCI-VMA-OR101", "purdue_level": 1},
-    {"id": "RM-ISO-201", "type": "Room Pressure Controller", "serves": "Isolation Room 201", "vendor": "Tridium-integrated", "controller": "JACE-RPC-ISO201", "purdue_level": 1},
-    {"id": "CHW-PLANT-1", "type": "Chilled Water Plant", "serves": "Campus Loop", "vendor": "Mixed", "controller": "JCI-FEC-CHW1", "purdue_level": 1},
-    {"id": "HW-PLANT-1", "type": "Hot Water Plant", "serves": "Campus Loop", "vendor": "Mixed", "controller": "JCI-FEC-HW1", "purdue_level": 1}
+    {"id": "AHU-OR-1", "type": "AHU", "serves": "OR Suite", "vendor": "Trane", "controller": "TRN-UC-OR1", "purdue_level": 1, "facility": "hospital"},
+    {"id": "AHU-ICU-1", "type": "AHU", "serves": "ICU", "vendor": "Johnson Controls", "controller": "JCI-FEC-ICU1", "purdue_level": 1, "facility": "hospital"},
+    {"id": "VAV-OR-101", "type": "VAV", "serves": "OR-1", "vendor": "Johnson Controls", "controller": "JCI-VMA-OR101", "purdue_level": 1, "facility": "hospital"},
+    {"id": "RM-ISO-201", "type": "Room Pressure Controller", "serves": "Isolation Room 201", "vendor": "Tridium-integrated", "controller": "JACE-RPC-ISO201", "purdue_level": 1, "facility": "hospital"},
+    {"id": "CHW-PLANT-1", "type": "Chilled Water Plant", "serves": "Campus Loop", "vendor": "Mixed", "controller": "JCI-FEC-CHW1", "purdue_level": 1, "facility": "hospital"},
+    {"id": "HW-PLANT-1", "type": "Hot Water Plant", "serves": "Campus Loop", "vendor": "Mixed", "controller": "JCI-FEC-HW1", "purdue_level": 1, "facility": "hospital"},
+    {"id": "RTU-1", "type": "AHU (rooftop VAV w/ economizer)", "serves": "Office Floors 3-8", "vendor": "Johnson Controls", "controller": "JCI-FEC-RTU1", "purdue_level": 1, "facility": "office"},
+    {"id": "VAV-301", "type": "VAV", "serves": "Floor 3 Open Office", "vendor": "Johnson Controls", "controller": "JCI-VMA-301", "purdue_level": 1, "facility": "office"},
+    {"id": "CHILLER-1", "type": "Air-Cooled Chiller", "serves": "Building Loop", "vendor": "Carrier", "controller": "CAR-CH1", "purdue_level": 1, "facility": "office"},
+    {"id": "BOILER-1", "type": "Condensing Boiler", "serves": "Building Loop", "vendor": "Carrier", "controller": "CAR-BLR1", "purdue_level": 1, "facility": "office"}
   ],
   "supervisory": [
-    {"id": "MET-SNE-01", "type": "Metasys supervisory engine", "vendor": "Johnson Controls", "purdue_level": 2},
-    {"id": "TRN-SC-01", "type": "Tracer SC+", "vendor": "Trane", "purdue_level": 2},
-    {"id": "JACE-OT-01", "type": "Niagara JACE", "vendor": "Tridium", "purdue_level": 2}
+    {"id": "MET-SNE-01", "type": "Metasys supervisory engine", "vendor": "Johnson Controls", "purdue_level": 2, "facility": "hospital"},
+    {"id": "TRN-SC-01", "type": "Tracer SC+", "vendor": "Trane", "purdue_level": 2, "facility": "hospital"},
+    {"id": "JACE-OT-01", "type": "Niagara JACE", "vendor": "Tridium", "purdue_level": 2, "facility": "hospital"},
+    {"id": "JACE-OFFICE-01", "type": "Niagara JACE", "vendor": "Tridium", "purdue_level": 2, "facility": "office"}
   ],
   "front_end": [
-    {"id": "MET-ADS-01", "type": "Metasys server", "vendor": "Johnson Controls", "purdue_level": 3},
-    {"id": "N4-SUP-01", "type": "Niagara Supervisor", "vendor": "Tridium", "purdue_level": 3},
-    {"id": "BAS-OWS-01", "type": "Operator workstation", "vendor": "Mixed", "purdue_level": 3}
+    {"id": "MET-ADS-01", "type": "Metasys server", "vendor": "Johnson Controls", "purdue_level": 3, "facility": "hospital"},
+    {"id": "N4-SUP-01", "type": "Niagara Supervisor", "vendor": "Tridium", "purdue_level": 3, "facility": "portfolio"},
+    {"id": "BAS-OWS-01", "type": "Operator workstation", "vendor": "Mixed", "purdue_level": 3, "facility": "hospital"}
   ]
 }

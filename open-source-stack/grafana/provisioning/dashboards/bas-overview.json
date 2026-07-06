@@ -1,0 +1,203 @@
+{
+  "annotations": {"list": []},
+  "description": "Hospital BAS Overview — NAS JAX Synthetic Lab. Runs influx_bridge.py to populate.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "OR Supply Air Temperature (AHU_OR1_SAT)",
+      "description": "AHU-OR-1 supply air. Normal: 52-60 °F. Alarm threshold: > 60 °F.",
+      "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "°F",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "thresholdsStyle": {"mode": "line+area"}
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "transparent", "value": null},
+              {"color": "green", "value": 52},
+              {"color": "red", "value": 61}
+            ]
+          },
+          "unit": "fahrenheit",
+          "min": 40,
+          "max": 80
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "options": {
+        "legend": {"calcs": ["last", "min", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+          "query": "from(bucket: \"bas-trends\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"point_readings\")\n  |> filter(fn: (r) => r.point_name == \"AHU_OR1_SAT\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CHW Supply Temperature (CHW_SUPPLY_TEMP)",
+      "description": "Chilled water plant supply. Normal: 42-48 °F. Alarm: > 50 °F indicates degraded cooling.",
+      "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "°F",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "thresholdsStyle": {"mode": "line+area"}
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "transparent", "value": null},
+              {"color": "green", "value": 42},
+              {"color": "red", "value": 50}
+            ]
+          },
+          "unit": "fahrenheit",
+          "min": 38,
+          "max": 60
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "options": {
+        "legend": {"calcs": ["last", "min", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+          "query": "from(bucket: \"bas-trends\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"point_readings\")\n  |> filter(fn: (r) => r.point_name == \"CHW_SUPPLY_TEMP\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Isolation Room 201 Pressure (ISO201_PRESSURE)",
+      "description": "Airborne isolation room must maintain NEGATIVE pressure (< -0.005 in.w.g.). Alarm: > 0 means room is no longer isolated.",
+      "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "in.w.g.",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "thresholdsStyle": {"mode": "line+area"}
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "transparent", "value": null},
+              {"color": "red", "value": -0.002},
+              {"color": "green", "value": -0.05},
+              {"color": "red", "value": 0}
+            ]
+          },
+          "unit": "short",
+          "min": -0.1,
+          "max": 0.05,
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "options": {
+        "legend": {"calcs": ["last", "min", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+          "query": "from(bucket: \"bas-trends\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"point_readings\")\n  |> filter(fn: (r) => r.point_name == \"ISO201_PRESSURE\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "OR Suite Humidity (OR1_RH)",
+      "description": "Operating room relative humidity. Normal: 20-60 %RH. Alarm: > 65 %RH = infection risk, sterility compromise.",
+      "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "%RH",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "thresholdsStyle": {"mode": "line+area"}
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "transparent", "value": null},
+              {"color": "green", "value": 20},
+              {"color": "red", "value": 65}
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "options": {
+        "legend": {"calcs": ["last", "min", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "bas-influxdb"},
+          "query": "from(bucket: \"bas-trends\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"point_readings\")\n  |> filter(fn: (r) => r.point_name == \"OR1_RH\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["bas", "hospital", "lab", "nas-jax"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "America/New_York",
+  "title": "Hospital BAS Overview",
+  "uid": "bas-overview",
+  "version": 1
+}

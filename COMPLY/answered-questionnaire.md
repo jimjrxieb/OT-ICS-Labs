@@ -21,11 +21,12 @@ vendors, alarm records, and operating values are fictional lab data.
 
 | Consultant question | Synthetic answer | Evidence artifact |
 |---|---|---|
-| What BAS platform is used? | Mixed stack: Metasys is the main BAS front end, Trane controls selected AHUs/RTUs, and Niagara integrates cross-vendor systems. | `docs/architecture.md` |
-| What are the main layers? | Field controllers at Purdue L1, supervisory engines/JACEs at L2, BAS servers/front ends at L3, firewall/jump host at L3.5, IT monitoring/ticketing at L4. | `docs/architecture.md` |
-| Which protocols are used? | BACnet/IP, BACnet MS/TP, Modbus TCP for plant meters, Niagara Fox between stations, and legacy N2 assumption for one older wing. | `docs/architecture.md` |
+| What BAS platform is used? | Mixed stack: Metasys is the main BAS front end, Trane controls selected AHUs/RTUs, and Niagara integrates cross-vendor systems. Lab open source layer: bacpypes3 + Node-RED + Grafana/InfluxDB mirrors the same functional architecture without vendor licensing. | `docs/architecture.md`, `COMPLY/scope-statement.md` |
+| What are the main layers? | Field controllers at Purdue L1, supervisory engines/JACEs at L2, BAS servers/front ends at L3, firewall/jump host at L3.5, IT monitoring/ticketing at L4. In the open source lab stack: bacpypes3 acts as the L1/L2 BACnet device, Node-RED acts as the L2/L3 polling and logic layer, Grafana/InfluxDB acts as the L3/L4 visualization and historian. | `docs/architecture.md` |
+| Which protocols are used? | BACnet/IP, BACnet MS/TP, Modbus TCP for plant meters, Niagara Fox between stations, and legacy N2 assumption for one older wing. In the lab: bacpypes3 speaks real BACnet/IP on localhost; Node-RED uses the `node-red-contrib-bacnet` module for Read-Property requests; MQTT bridges data to Grafana. | `docs/architecture.md` |
 | Are field buses separated from BAS/IP? | Yes in the synthetic target: MS/TP trunks terminate at supervisory controllers; BACnet/IP rides a BAS VLAN; IT access crosses a firewall/jump host. | `docs/architecture.md` |
-| Where does BAS touch IT? | AD-authenticated operator accounts, jump host for vendor support, SIEM log handoff, ticketing/CMMS handoff, backup storage. | `docs/architecture.md` |
+| Where does BAS touch IT? | AD-authenticated operator accounts, jump host for vendor support, SIEM log handoff, ticketing/CMMS handoff, backup storage. Open source lab adds: Node-RED dashboard on port 1880, Grafana on port 3000, InfluxDB on port 8086 — all localhost only. | `docs/architecture.md` |
+| What open source tools cover the enterprise BAS stack in this lab? | bacpypes3 replaces BACnet drivers; Node-RED replaces Niagara programming/polling; InfluxDB replaces the Metasys/Niagara historian; Grafana replaces Metasys Trend Viewer and Niagara History Extension; MQTT/Mosquitto replaces Niagara Fox bridge. Same concepts, open protocols, no licenses. | `COMPLY/scope-statement.md` open source stack table |
 
 ## 3. Asset And Point Inventory
 

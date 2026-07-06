@@ -1,10 +1,10 @@
-# Scenario Summary -- isolation_pressure_loss
+# Scenario Summary -- AHU_OR1_FAN_FAILURE
 
-- snapshots: 8
-- trend rows: 88
-- alarms: 8
+- snapshots: 12
+- trend rows: 288
+- alarms: 3
 - data boundary: synthetic lab data only
 
 ## Alarm Counts
 
-- critical:ISO201_PRESSURE: 8
+- high:AHU_OR1_SAT: 3
