@@ -14,7 +14,8 @@ Steps:
      ranges (fault injection can only perturb points that exist)
    - BUILD/2-approvedbuilds/BP-006-trouble-call-diagnosis-mode.md
      sections on the injection schema — supported modes are: drift
-     (rate_per_step from start_step), stuck/step (pin at a value), and
+     (rate_per_step from start_step), stuck/step/noise_flatline (pin at a
+     value — noise_flatline reads as a dead/flatlined sensor), and
      forces (side effects like forcing another point or raise_alarm).
      Oscillation is NOT supported.
 2. Interview me, ONE question at a time:

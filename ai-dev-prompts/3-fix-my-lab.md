@@ -24,6 +24,10 @@ Steps:
    processes, release stray overrides via the API
    (POST /api/points/{name}/release?role=technician), clear abandoned
    tickets per the sealed file, apply recorded restore commands.
+   (The two pipeline processes are plain host processes started from the
+   repo root, in the background: python3 open-source-stack/bacnet_device.py
+   and python3 open-source-stack/influx_bridge.py. The front end restarts
+   with scripts/start-frontend.sh.)
 3. Regenerate a clean baseline: python3 simulator/bas_sim.py --scenario normal --steps 12
 4. Run the full health checklist from BREAK/BREAK.md and show me every
    result. Run scripts/run-smoke-test.sh.
