@@ -16,6 +16,22 @@ what to do, and what it must never touch.
 | `4-add-a-fault.md` | Guides the agent to encode one of YOUR real-world war stories as a new playable fault |
 | `5-teardown.md` | Stops everything cleanly |
 
+## Where to Start
+
+Don't point the agent at this README — paste the whole prompt file that
+matches your situation:
+
+- **Fresh terminal, lab not running yet** → paste `1-setup-and-verify.md`
+- **Lab is healthy, you want to train** → paste `2-2am-call.md` — or just
+  say: `Read BREAK/BREAK.md and follow it. 2am call, level 1.`
+- **Previous session died / lab state unknown** → paste `3-fix-my-lab.md`.
+  It repairs back to a verified healthy baseline, so it's the safe restart
+  after a crashed or closed terminal.
+- **Done for the day** → paste `5-teardown.md`
+
+Each prompt tells the agent what to read on its own — no other context
+needed.
+
 Ground rules baked into every prompt (also see `BREAK/BREAK.md`):
 synthetic data only, everything stays on localhost, the agent never runs
 git commands, and nothing outside this repo is ever touched.

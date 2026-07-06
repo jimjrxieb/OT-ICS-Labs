@@ -50,6 +50,7 @@ import asyncio
 import json
 import logging
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 logging.basicConfig(
@@ -81,7 +82,7 @@ UNITS_MAP = {
     "HW_SUPPLY_TEMP": "degreesFahrenheit",
     "OR1_RH": "percentRelativeHumidity",
     "ISO201_PRESSURE": "inchesOfWater",
-    "CHW_DIFF_PRESSURE": "poundsPerSquareInch",
+    "CHW_DIFF_PRESSURE": "poundsForcePerSquareInch",
 }
 
 
@@ -98,10 +99,8 @@ def load_points() -> dict:
 async def run_bacnet_device():
     try:
         from bacpypes3.app import Application
-        from bacpypes3.pdu import Address
         from bacpypes3.local.analog import AnalogInputObject
         from bacpypes3.local.binary import BinaryInputObject
-        from bacpypes3.basetypes import EngineeringUnits
     except ImportError as exc:
         log.error("bacpypes3 not installed: %s", exc)
         log.error("Install with: pip install bacpypes3==0.0.102")
@@ -109,10 +108,17 @@ async def run_bacnet_device():
 
     log.info("BACnet/IP device starting — device %s @ %s", DEVICE_INSTANCE, DEVICE_ADDRESS)
 
-    app = await Application.create(
-        address=Address(DEVICE_ADDRESS),
-        name=DEVICE_NAME,
-        instance=DEVICE_INSTANCE,
+    app = Application.from_args(
+        Namespace(
+            address=DEVICE_ADDRESS,
+            bbmd=None,
+            foreign=None,
+            instance=DEVICE_INSTANCE,
+            name=DEVICE_NAME,
+            network=0,
+            ttl=30,
+            vendoridentifier=999,
+        )
     )
 
     points = load_points()
@@ -140,7 +146,7 @@ async def run_bacnet_device():
                     outOfService=False,
                     units=UNITS_MAP.get(name, "noUnits"),
                 )
-            app.objectIdentifier[obj.objectIdentifier] = obj
+            app.add_object(obj)
             object_map[name] = (obj, is_binary, idx)
             obj_type = "binaryInput" if is_binary else "analogInput"
             log.info("  [%2d] %-35s  %s:%d  value=%s", idx, name, obj_type, idx, raw_value)
@@ -154,19 +160,22 @@ async def run_bacnet_device():
     )
     log.info("Listening on %s  (BACnet/IP port 47808)", DEVICE_ADDRESS)
 
-    while True:
-        await asyncio.sleep(REFRESH_INTERVAL)
-        fresh = load_points()
-        updated = 0
-        for name, val in fresh.items():
-            if name in object_map:
-                obj, is_binary, _ = object_map[name]
-                if is_binary:
-                    obj.presentValue = "active" if bool(val) else "inactive"
-                else:
-                    obj.presentValue = float(val)
-                updated += 1
-        log.info("Refreshed %d point values from simulator output", updated)
+    try:
+        while True:
+            await asyncio.sleep(REFRESH_INTERVAL)
+            fresh = load_points()
+            updated = 0
+            for name, val in fresh.items():
+                if name in object_map:
+                    obj, is_binary, _ = object_map[name]
+                    if is_binary:
+                        obj.presentValue = "active" if bool(val) else "inactive"
+                    else:
+                        obj.presentValue = float(val)
+                    updated += 1
+            log.info("Refreshed %d point values from simulator output", updated)
+    finally:
+        app.close()
 
 
 if __name__ == "__main__":
