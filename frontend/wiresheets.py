@@ -39,6 +39,31 @@ BLOCK_SLOTS: dict[str, dict[str, list[str]]] = {
 }
 
 
+REQUIRED_CONFIG_KEYS: dict[str, list[str]] = {
+    "Constant": ["value"],
+    "ScheduleRef": ["schedule_id"],
+    "PointRef": ["point"],
+    "PointWriteRef": ["point"],
+}
+
+
+def validate_block_config(block: dict[str, Any]) -> list[str]:
+    block_type = block.get("type")
+    if not isinstance(block_type, str):
+        return []
+    required = REQUIRED_CONFIG_KEYS.get(block_type, [])
+    if not required:
+        return []
+    config = block.get("config")
+    if not isinstance(config, dict):
+        return [f"block {block.get('block_id')!r} config must be an object"]
+    return [
+        f"block {block.get('block_id')!r} of type {block.get('type')!r} is missing required config key {key!r}"
+        for key in required
+        if key not in config
+    ]
+
+
 def slot_spec(block_type: str) -> dict[str, list[str]]:
     return BLOCK_SLOTS.get(block_type, {"inputs": [], "outputs": ["out"]})
 
@@ -152,8 +177,8 @@ def validate_block(block: dict[str, Any]) -> list[str]:
     if errors:
         return errors
 
-    if not isinstance(block["block_id"], str):
-        errors.append(f"block_id must be a string, got {block['block_id']!r}")
+    if not isinstance(block["block_id"], str) or not block["block_id"].strip():
+        errors.append(f"block_id must be a non-blank string, got {block['block_id']!r}")
     if not isinstance(block["type"], str) or block["type"] not in BLOCK_SLOTS:
         errors.append(f"unknown block type {block['type']!r} (must be one of {sorted(BLOCK_SLOTS)})")
     if not isinstance(block["x"], (int, float)) or not isinstance(block["y"], (int, float)):
@@ -169,6 +194,10 @@ def validate_link(link: dict[str, Any], blocks_by_id: dict[str, dict[str, Any]])
         if key not in link:
             errors.append(f"link missing required field {key!r}")
     if errors:
+        return errors
+
+    if not all(isinstance(link[key], str) for key in ("from", "from_slot", "to", "to_slot")):
+        errors.append("link 'from'/'from_slot'/'to'/'to_slot' must all be strings")
         return errors
 
     from_block = blocks_by_id.get(link["from"])
@@ -197,12 +226,18 @@ def validate_wiresheet(
     if errors:
         return errors
 
+    if not ws["wiresheet_id"].strip():
+        errors.append("wiresheet_id must not be blank")
+    elif "/" in ws["wiresheet_id"] or "\\" in ws["wiresheet_id"] or ".." in ws["wiresheet_id"]:
+        errors.append(f"wiresheet_id {ws['wiresheet_id']!r} contains unsafe characters")
+
     if is_create and any(w["wiresheet_id"] == ws["wiresheet_id"] for w in existing_sheets):
         errors.append(f"wiresheet_id {ws['wiresheet_id']!r} already exists")
 
     seen_block_ids: set[str] = set()
     for block in ws["blocks"]:
         errors.extend(validate_block(block))
+        errors.extend(validate_block_config(block))
         bid = block.get("block_id")
         if isinstance(bid, str):
             if bid in seen_block_ids:
@@ -216,12 +251,12 @@ def validate_wiresheet(
     seen_targets: set[tuple[str, str]] = set()
     for link in ws["links"]:
         errors.extend(validate_link(link, blocks_by_id))
-        target = (link.get("to"), link.get("to_slot"))
-        if target in seen_targets:
-            errors.append(
-                f"input slot {link.get('to_slot')!r} on block {link.get('to')!r} already has an incoming link"
-            )
-        seen_targets.add(target)
+        to_val, to_slot_val = link.get("to"), link.get("to_slot")
+        if isinstance(to_val, str) and isinstance(to_slot_val, str):
+            target = (to_val, to_slot_val)
+            if target in seen_targets:
+                errors.append(f"input slot {to_slot_val!r} on block {to_val!r} already has an incoming link")
+            seen_targets.add(target)
 
     if errors:
         return errors
@@ -232,6 +267,8 @@ def validate_wiresheet(
         errors.append(str(exc))
     except KeyError as exc:
         errors.append(f"block config missing required key {exc}")
+    except TypeError as exc:
+        errors.append(f"block evaluation type error: {exc}")
 
     return errors
 
@@ -294,7 +331,48 @@ def self_test() -> int:
         {**good_ws, "blocks": [{"block_id": ["not", "a", "string"], "type": "Constant", "x": 0, "y": 0, "config": {"value": 1.0}}]},
         [], is_create=True,
     )
-    assert any("block_id must be a string" in e for e in errs), errs
+    assert any("block_id must be a non-blank string" in e for e in errs), errs
+
+    # Fix 1: PointWriteRef with empty config must be rejected at validate_wiresheet,
+    # not silently pass and blow up the read path later.
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "PointWriteRef", "x": 0, "y": 0, "config": {}}]},
+        [], is_create=True,
+    )
+    assert any("missing required config key 'point'" in e for e in errs), errs
+
+    # Fix 2a: a link with a non-string from/to must be rejected, not raise TypeError.
+    errs = validate_wiresheet(
+        {**good_ws, "links": [{"from": ["A"], "from_slot": "out", "to": "B", "to_slot": "a"}]},
+        [], is_create=True,
+    )
+    assert any("must all be strings" in e for e in errs), errs
+
+    # Fix 2c: incompatible Constant types feeding a Compare must be rejected, not raise TypeError.
+    mismatched_blocks = [
+        {"block_id": "C1", "type": "Constant", "x": 0, "y": 0, "config": {"value": "not_a_number"}},
+        {"block_id": "C2", "type": "Constant", "x": 0, "y": 50, "config": {"value": 5}},
+        {"block_id": "CMP", "type": "Compare", "x": 100, "y": 0, "config": {"op": ">"}},
+    ]
+    mismatched_links = [
+        {"from": "C1", "from_slot": "out", "to": "CMP", "to_slot": "a"},
+        {"from": "C2", "from_slot": "out", "to": "CMP", "to_slot": "b"},
+    ]
+    errs = validate_wiresheet(
+        {"wiresheet_id": "WS3", "display_name": "WS3", "blocks": mismatched_blocks, "links": mismatched_links},
+        [], is_create=True,
+    )
+    assert any("type error" in e for e in errs), errs
+
+    # Fix 3: blank wiresheet_id and block_id must be rejected.
+    errs = validate_wiresheet({**good_ws, "wiresheet_id": "   "}, [], is_create=True)
+    assert any("wiresheet_id must not be blank" in e for e in errs), errs
+
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "  ", "type": "Not", "x": 0, "y": 0}]},
+        [], is_create=True,
+    )
+    assert any("block_id must be a non-blank string" in e for e in errs), errs
 
     print("wiresheets self-test passed")
     return 0
