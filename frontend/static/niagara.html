@@ -91,6 +91,22 @@ canvas#sparkline { display: block; background: #fff; border: 1px solid #c4d4b0; 
 .trouble-result.correct { display: block; border: 1px solid #2e7d32; background: #e8f5e9; color: #1b5e20; }
 .trouble-result.incorrect { display: block; border: 1px solid #c62828; background: #ffebee; color: #8a1c1c; }
 code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; background: #e8ede0; padding: 1px 5px; border-radius: 2px; }
+/* Schedule */
+.schedule-card { background: #fff; border: 1px solid #c4d4b0; border-radius: 4px; padding: 14px 16px; margin-bottom: 16px; }
+.schedule-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.schedule-title { font-weight: 700; color: #2d4a1e; font-size: 0.88rem; }
+.occ-badge { display: inline-block; padding: 3px 12px; border-radius: 10px; font-size: 0.76rem; font-weight: 700; }
+.occ-badge.occupied { background: #e8f5e9; border: 1px solid #2e7d32; color: #2e7d32; }
+.occ-badge.unoccupied { background: #eceff1; border: 1px solid #607d8b; color: #455a64; }
+.driven-badge { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 0.71rem; font-weight: 700; }
+.driven-badge.override { background: #f3e5f5; border: 1px solid #7b1fa2; color: #7b1fa2; }
+.driven-badge.schedule { background: #e8f5e9; border: 1px solid #2e7d32; color: #2e7d32; }
+.driven-badge.computed { background: #eceff1; border: 1px solid #90a4ae; color: #556; }
+.week-grid { display: grid; grid-template-columns: 90px repeat(7, 1fr); gap: 4px; margin-bottom: 12px; font-size: 0.76rem; }
+.week-grid .day-label { font-weight: 600; color: #556; padding: 4px 6px; }
+.week-grid .day-cell { padding: 4px 6px; border-radius: 3px; text-align: center; background: #f0f5ea; color: #78907a; }
+.week-grid .day-cell.occ { background: #dcedc8; color: #33691e; font-weight: 600; }
+.week-grid .head { font-weight: 700; color: #2d4a1e; text-align: center; padding: 4px 0; }
 </style>
 </head>
 <body>
@@ -125,6 +141,10 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
       <div class="tab" onclick="showTab('alarms')">Alarm Console</div>
       <div class="tab" onclick="showTab('trends')">History Extension</div>
       <div class="tab" onclick="showTab('technician')">Technician Panel</div>
+      <div class="tab" onclick="showTab('schedule')">Schedule</div>
+      <div class="tab" onclick="showTab('wiresheet')">Wire Sheet</div>
+      <div class="tab" onclick="showTab('platform')">Platform</div>
+      <div class="tab" onclick="showTab('px')">Px Graphics</div>
       <div class="tab" onclick="showTab('trouble')">Trouble Call</div>
       <div class="tab" onclick="showTab('run')">Run Scenario</div>
     </div>
@@ -243,6 +263,109 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
         </table>
       </div>
 
+      <!-- SCHEDULE -->
+      <div id="panel-schedule" class="panel">
+        <div class="section-title">Schedule — Weekly Pattern &amp; Effective Output</div>
+        <p class="tech-note">
+          A BooleanSchedule resolves occupied/unoccupied from a weekly
+          time pattern, with date exceptions winning outright. Its
+          effective output sets the baseline for its linked points
+          whenever no operator override is active — override beats
+          schedule beats default, same as a Niagara priority array.
+        </p>
+        <div id="schedule-list"></div>
+      </div>
+
+      <!-- WIRE SHEET -->
+      <div id="panel-wiresheet" class="panel">
+        <div class="section-title">Wire Sheet — Function Blocks &amp; Links</div>
+        <p class="tech-note">
+          Values flow left to right through the wiring, re-resolved every
+          time you refresh. Each block shows its declared slots; a link
+          carries one block's output slot into another's input slot.
+        </p>
+        <div class="toolbar">
+          <label for="wiresheet-select">Program:</label>
+          <select id="wiresheet-select" onchange="loadWireSheet(this.value)"></select>
+          <button onclick="loadWireSheet(document.getElementById('wiresheet-select').value)">&#8635; Refresh</button>
+        </div>
+        <div id="wiresheet-desc" class="meta-row"></div>
+        <div id="wiresheet-canvas"></div>
+      </div>
+
+      <!-- PLATFORM -->
+      <div id="panel-platform" class="panel">
+        <div class="section-title">Platform — Station Administration</div>
+        <p class="tech-note">
+          Host-level administration, kept separate from station logic —
+          the same split Niagara draws between Workbench's station view
+          and its Platform Administration view. Station/license details
+          below are synthetic lab window-dressing; Take Backup is the one
+          real action — it snapshots <code class="ord">data/input/</code>
+          to a timestamped distribution directory.
+        </p>
+        <table id="platform-stations-table">
+          <thead><tr>
+            <th>Station</th>
+            <th>Role</th>
+            <th>Host</th>
+            <th>Niagara Version</th>
+            <th>Fox Port</th>
+            <th>Licensed Features</th>
+            <th>Backup</th>
+          </tr></thead>
+          <tbody id="platform-stations-body"></tbody>
+        </table>
+        <div id="platform-backup-status" class="meta-row"></div>
+        <div class="section-title" style="margin-top:18px;">Distribution Backup History</div>
+        <table>
+          <thead><tr><th>Timestamp</th><th>Station</th><th>Operator</th><th>Backup Directory</th><th>Files</th></tr></thead>
+          <tbody id="platform-backups-body"></tbody>
+        </table>
+      </div>
+
+      <!-- PX GRAPHICS -->
+      <div id="panel-px" class="panel">
+        <div class="section-title">Px Graphics — Bound Graphic Page</div>
+        <p class="tech-note">
+          What an operator actually looks at day to day, instead of the
+          raw Property Sheet — a schematic with widgets bound to live
+          points. The setpoint widgets carry the same Driven-By badge as
+          the Schedule and Wire Sheet tabs.
+        </p>
+        <div class="toolbar">
+          <label for="px-select">Page:</label>
+          <select id="px-select" onchange="loadPxPage(this.value)"></select>
+          <button onclick="loadPxPage(document.getElementById('px-select').value)">&#8635; Refresh</button>
+        </div>
+        <div id="px-canvas"></div>
+        <div class="section-title" style="margin-top:16px;">Create Px Page</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <input id="px-new-id" placeholder="px_id (e.g. AHU3_SCHEMATIC)" style="width:220px;">
+          <input id="px-new-name" placeholder="Display name" style="width:220px;">
+          <input id="px-new-facility" placeholder="Facility (optional)" style="width:140px;">
+          <select id="px-editor-role"><option value="technician">technician</option><option value="admin">admin</option></select>
+          <button onclick="createPxPage()">Create Page</button>
+        </div>
+        <div id="px-create-status" style="font-size:0.78rem;margin-bottom:10px;"></div>
+
+        <div class="section-title">Add Widget</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <input id="px-widget-id" placeholder="widget_id" style="width:120px;">
+          <select id="px-widget-kind">
+            <option value="value">value</option>
+            <option value="gauge">gauge</option>
+            <option value="bool">bool</option>
+          </select>
+          <select id="px-widget-point"></select>
+          <input id="px-widget-label" placeholder="Label" style="width:140px;">
+          <input id="px-widget-x" placeholder="x" type="number" value="40" style="width:70px;">
+          <input id="px-widget-y" placeholder="y" type="number" value="40" style="width:70px;">
+          <button onclick="addPxWidget()">Add Widget</button>
+        </div>
+        <div id="px-save-status" style="font-size:0.78rem;"></div>
+      </div>
+
       <!-- TROUBLE CALL -->
       <div id="panel-trouble" class="panel">
         <div class="section-title">Trouble Call — Workbench Diagnostic Training</div>
@@ -311,13 +434,17 @@ let equipmentInventoryData = null;
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const panels = ['points','alarms','trends','technician','trouble','run'];
+    const panels = ['points','alarms','trends','technician','schedule','wiresheet','platform','px','trouble','run'];
     t.classList.toggle('active', panels[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
   if (name === 'alarms') loadAlarms();
   if (name === 'technician') loadTechnician();
+  if (name === 'schedule') loadSchedule();
+  if (name === 'wiresheet') loadWireSheetList();
+  if (name === 'platform') loadPlatform();
+  if (name === 'px') loadPxList();
   if (name === 'trouble') loadTroubleCall();
 }
 
@@ -345,6 +472,11 @@ function toOrd(equip, point) {
     'AHU-ICU-1': 'BACnetNetwork/AHU_ICU_1',
     'VAV-OR-101': 'BACnetNetwork/VAV_OR_101',
     'CHW-PLANT-1': 'BACnetNetwork/CHW_Plant',
+    'CHILLER-HOSP-1': 'BACnetNetwork/CHW_Plant/CHILLER_HOSP_1',
+    'CHILLER-HOSP-2': 'BACnetNetwork/CHW_Plant/CHILLER_HOSP_2',
+    'CWP-1': 'BACnetNetwork/CHW_Plant/CWP_1',
+    'CWP-2': 'BACnetNetwork/CHW_Plant/CWP_2',
+    'COOLING-TOWER-1': 'BACnetNetwork/CHW_Plant/Cooling_Tower_1',
     'HW-PLANT-1': 'BACnetNetwork/HW_Plant',
     'RM-ISO-201': 'JACENetwork/JACE_RPC_ISO201',
     'RTU-1': 'JACENetwork/JACE_OFFICE_01/RTU_1',
@@ -359,6 +491,12 @@ async function loadPoints() {
   try {
     const res = await fetch('/api/points');
     allPointsData = await res.json();
+    // Building 822 is a Trane site with its own front end at /tracer. It shares
+    // this API but must not appear in this Tridium supervisor. Filter at the
+    // boundary so every downstream render stays clean.
+    allPointsData.equipment = Object.fromEntries(
+      Object.entries(allPointsData.equipment || {})
+        .filter(([, pts]) => (pts[0] || {}).facility !== 'barracks822'));
     const equipRes = await fetch('/api/equipment');
     equipmentInventoryData = await equipRes.json();
     document.getElementById('scenario-badge').textContent = 'Scenario: ' + (allPointsData.scenario || '—');
@@ -581,6 +719,423 @@ async function loadOperatorLog() {
   } catch(e) {
     tbody.innerHTML = '<tr><td colspan="5" style="color:#c62828">Error loading operator log: ' + e + '</td></tr>';
   }
+}
+
+const WEEKDAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+const WEEKDAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+async function loadSchedule() {
+  const container = document.getElementById('schedule-list');
+  try {
+    const listRes = await fetch('/api/schedules');
+    const listData = await listRes.json();
+    if (!listData.schedules.length) {
+      container.innerHTML = '<div class="meta-row">No Schedule components configured.</div>';
+      return;
+    }
+    const details = await Promise.all(
+      listData.schedules.map(s => fetch('/api/schedules/' + s.schedule_id).then(r => r.json()))
+    );
+    container.innerHTML = details.map(renderScheduleCard).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="color:#c62828">Error loading schedules: ' + e + '</div>';
+  }
+}
+
+function renderScheduleCard(sch) {
+  const ord = 'station:|slot:/Schedule/' + sch.schedule_id;
+  const occClass = sch.effective_value ? 'occupied' : 'unoccupied';
+  const occLabel = sch.effective_value ? 'OCCUPIED' : 'UNOCCUPIED';
+  const sourceNote = sch.effective_source === 'exception'
+    ? ' (exception: ' + sch.effective_label + ')'
+    : ' (' + sch.effective_source + ' pattern)';
+
+  const weekGrid = WEEKDAYS.map((day, i) => {
+    const windows = (sch.weekly[day] || []);
+    const occ = windows.length > 0;
+    const label = occ ? windows.map(w => w[0] + '–' + w[1]).join(', ') : 'closed';
+    return '<div class="day-cell' + (occ ? ' occ' : '') + '">' + label + '</div>';
+  }).join('');
+  const weekHeads = WEEKDAY_LABELS.map(l => '<div class="head">' + l + '</div>').join('');
+
+  const exceptions = (sch.exceptions || []).length
+    ? '<table><thead><tr><th>Date</th><th>Output</th><th>Label</th></tr></thead><tbody>' +
+      sch.exceptions.map(e =>
+        '<tr><td>' + e.date + '</td><td>' + (e.value ? 'occupied' : 'unoccupied') + '</td><td>' + (e.label || '') + '</td></tr>'
+      ).join('') + '</tbody></table>'
+    : '<div class="meta-row">No exceptions configured.</div>';
+
+  const linked = sch.linked_points.map(lp =>
+    '<tr>' +
+    '<td style="font-family:monospace;font-size:0.74rem">' + lp.point + '</td>' +
+    '<td>' + lp.equipment + '</td>' +
+    '<td>' + lp.occupied_value + '</td>' +
+    '<td>' + lp.unoccupied_value + '</td>' +
+    '<td style="font-weight:600">' + lp.current_baseline + '</td>' +
+    '<td><span class="driven-badge ' + lp.driven_by + '">' + lp.driven_by + '</span></td>' +
+    '</tr>'
+  ).join('');
+
+  return '' +
+    '<div class="schedule-card">' +
+      '<div class="schedule-head">' +
+        '<div><div class="schedule-title">' + sch.display_name + '</div>' +
+        '<code class="ord">' + ord + '</code> &middot; ' + sch.type + '</div>' +
+        '<span class="occ-badge ' + occClass + '">' + occLabel + sourceNote + '</span>' +
+      '</div>' +
+      '<div class="week-grid">' +
+        '<div></div>' + weekHeads +
+        '<div class="day-label">Occupied</div>' + weekGrid +
+      '</div>' +
+      '<div class="section-title" style="font-size:0.8rem;margin-top:10px;">Exceptions</div>' +
+      exceptions +
+      '<div class="section-title" style="font-size:0.8rem;margin-top:14px;">Linked Points</div>' +
+      '<table><thead><tr><th>Point</th><th>Equipment</th><th>Occupied Value</th><th>Unoccupied Value</th><th>Current Baseline</th><th>Driven By</th></tr></thead>' +
+      '<tbody>' + linked + '</tbody></table>' +
+    '</div>';
+}
+
+let wireSheetLoaded = false;
+
+async function loadWireSheetList() {
+  if (wireSheetLoaded) return;
+  const select = document.getElementById('wiresheet-select');
+  try {
+    const res = await fetch('/api/wiresheets');
+    const data = await res.json();
+    select.innerHTML = data.wiresheets.map(w => '<option value="' + w.wiresheet_id + '">' + w.display_name + '</option>').join('');
+    wireSheetLoaded = true;
+    if (data.wiresheets.length) await loadWireSheet(data.wiresheets[0].wiresheet_id);
+  } catch(e) {
+    document.getElementById('wiresheet-canvas').innerHTML = '<div style="color:#c62828">Error loading Wire Sheets: ' + e + '</div>';
+  }
+}
+
+async function loadWireSheet(id) {
+  if (!id) return;
+  const canvas = document.getElementById('wiresheet-canvas');
+  try {
+    const res = await fetch('/api/wiresheets/' + id);
+    const ws = await res.json();
+    document.getElementById('wiresheet-desc').textContent = ws.description || '';
+    document.getElementById('wiresheet-select').value = ws.wiresheet_id;
+    canvas.innerHTML = renderWireSheetSvg(ws);
+  } catch(e) {
+    canvas.innerHTML = '<div style="color:#c62828">Error loading Wire Sheet: ' + e + '</div>';
+  }
+}
+
+function formatSlotValue(v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return String(v);
+}
+
+function blockCaption(b) {
+  if (b.config && b.config.point) return b.config.point;
+  if (b.config && b.config.schedule_id) return b.config.schedule_id;
+  if (b.config && b.config.value !== undefined) return String(b.config.value);
+  if (b.config && b.config.op) return 'op ' + b.config.op;
+  return '';
+}
+
+function renderWireSheetSvg(ws) {
+  const BLOCK_W = 190, ROW_H = 20, HEADER_H = 40, MARGIN = 30;
+  const byId = {};
+  ws.blocks.forEach(b => byId[b.block_id] = b);
+
+  function blockHeight(b) {
+    const rows = Math.max(b.slots.inputs.length, b.slots.outputs.length, 1);
+    return HEADER_H + rows * ROW_H + 10;
+  }
+  function anchor(blockId, slotName, side) {
+    const b = byId[blockId];
+    const list = side === 'in' ? b.slots.inputs : b.slots.outputs;
+    const idx = Math.max(list.indexOf(slotName), 0);
+    return {
+      x: side === 'in' ? b.x : b.x + BLOCK_W,
+      y: b.y + HEADER_H + idx * ROW_H + ROW_H / 2,
+    };
+  }
+
+  let maxX = 0, maxY = 0;
+  ws.blocks.forEach(b => {
+    maxX = Math.max(maxX, b.x + BLOCK_W + MARGIN);
+    maxY = Math.max(maxY, b.y + blockHeight(b) + MARGIN);
+  });
+
+  let svg = '<svg width="100%" viewBox="0 0 ' + maxX + ' ' + maxY + '" style="background:#fafaf5;border:1px solid #c4d4b0;border-radius:4px;font-family:monospace;">';
+
+  (ws.links || []).forEach(link => {
+    const a = anchor(link.from, link.from_slot, 'out');
+    const b = anchor(link.to, link.to_slot, 'in');
+    const midX = (a.x + b.x) / 2;
+    svg += '<path d="M' + a.x + ',' + a.y + ' C' + midX + ',' + a.y + ' ' + midX + ',' + b.y + ' ' + b.x + ',' + b.y +
+      '" stroke="#6a9a48" stroke-width="1.6" fill="none"/>';
+  });
+
+  ws.blocks.forEach(b => {
+    const h = blockHeight(b);
+    const caption = blockCaption(b);
+    svg += '<g>';
+    svg += '<rect x="' + b.x + '" y="' + b.y + '" width="' + BLOCK_W + '" height="' + h + '" rx="4" fill="#fff" stroke="#2d4a1e" stroke-width="1.2"/>';
+    svg += '<rect x="' + b.x + '" y="' + b.y + '" width="' + BLOCK_W + '" height="24" rx="4" fill="#2d4a1e"/>';
+    svg += '<text x="' + (b.x + 8) + '" y="' + (b.y + 16) + '" fill="#d4e8c2" font-size="11" font-weight="700">' + b.block_id + '</text>';
+    svg += '<text x="' + (b.x + 8) + '" y="' + (b.y + 35) + '" fill="#78907a" font-size="9" font-style="italic">' +
+      b.type + (caption ? ' · ' + caption : '') + '</text>';
+    b.slots.inputs.forEach((s, i) => {
+      const y = b.y + HEADER_H + i * ROW_H + ROW_H / 2;
+      svg += '<circle cx="' + b.x + '" cy="' + y + '" r="3" fill="#2d4a1e"/>';
+      svg += '<text x="' + (b.x + 8) + '" y="' + (y + 3) + '" font-size="10" fill="#556">' + s + '</text>';
+    });
+    b.slots.outputs.forEach((s, i) => {
+      const y = b.y + HEADER_H + i * ROW_H + ROW_H / 2;
+      const val = b.resolved ? formatSlotValue(b.resolved[s]) : '—';
+      svg += '<circle cx="' + (b.x + BLOCK_W) + '" cy="' + y + '" r="3" fill="#2d4a1e"/>';
+      svg += '<text x="' + (b.x + BLOCK_W - 8) + '" y="' + (y + 3) + '" font-size="10" fill="#2d4a1e" font-weight="700" text-anchor="end">' +
+        s + ' = ' + val + '</text>';
+    });
+    svg += '</g>';
+  });
+
+  svg += '</svg>';
+  return svg;
+}
+
+async function loadPlatform() {
+  await loadRoles();
+  await loadPlatformStations();
+  await loadPlatformBackups();
+}
+
+async function loadPlatformStations() {
+  const tbody = document.getElementById('platform-stations-body');
+  try {
+    const res = await fetch('/api/platform/stations');
+    const data = await res.json();
+    tbody.innerHTML = data.stations.map(s =>
+      '<tr>' +
+      '<td><strong>' + s.station_id + '</strong><br><span style="color:#78907a;font-size:0.72rem">' + s.display_name + '</span></td>' +
+      '<td>' + s.role + '</td>' +
+      '<td style="font-size:0.75rem">' + s.host + '</td>' +
+      '<td style="font-size:0.75rem">' + s.niagara_version + '</td>' +
+      '<td>' + s.fox_port + '</td>' +
+      '<td style="font-size:0.72rem">' + s.license.features.join(', ') + '</td>' +
+      '<td><button onclick="takePlatformBackup(\'' + s.station_id + '\')">Take Backup</button></td>' +
+      '</tr>'
+    ).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:#c62828">Error: ' + e + '</td></tr>';
+  }
+}
+
+async function takePlatformBackup(stationId) {
+  const role = selectedRole();
+  const res = await fetch(
+    '/api/platform/backup?station_id=' + encodeURIComponent(stationId) +
+    '&role=' + encodeURIComponent(role) + '&operator_id=' + encodeURIComponent('eng-workbench'),
+    { method: 'POST' }
+  );
+  const status = document.getElementById('platform-backup-status');
+  const data = await res.json();
+  if (!res.ok) {
+    status.style.color = '#c62828';
+    status.textContent = 'Backup denied: ' + (data.detail || res.statusText);
+    return;
+  }
+  status.style.color = '#2e7d32';
+  status.textContent = 'Backup complete: ' + data.backup_dir;
+  await loadPlatformBackups();
+}
+
+async function loadPlatformBackups() {
+  const tbody = document.getElementById('platform-backups-body');
+  try {
+    const res = await fetch('/api/platform/backups');
+    const data = await res.json();
+    if (!data.backups.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#78907a;text-align:center;padding:12px">No backups taken yet this session</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.backups.slice().reverse().map(b =>
+      '<tr>' +
+      '<td>' + b.timestamp.replace('T',' ').replace('+00:00','Z') + '</td>' +
+      '<td>' + b.station_id + '</td>' +
+      '<td>' + b.operator_id + '</td>' +
+      '<td style="font-family:monospace;font-size:0.72rem">' + b.backup_dir + '</td>' +
+      '<td style="font-size:0.75rem">' + b.files.join(', ') + '</td>' +
+      '</tr>'
+    ).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#c62828">Error: ' + e + '</td></tr>';
+  }
+}
+
+let pxLoaded = false;
+
+async function loadPxList() {
+  await populatePxPointOptions();
+  if (pxLoaded) return;
+  const select = document.getElementById('px-select');
+  try {
+    const res = await fetch('/api/px');
+    const data = await res.json();
+    select.innerHTML = data.pages.map(p => '<option value="' + p.px_id + '">' + p.display_name + '</option>').join('');
+    pxLoaded = true;
+    if (data.pages.length) await loadPxPage(data.pages[0].px_id);
+  } catch(e) {
+    document.getElementById('px-canvas').innerHTML = '<div style="color:#c62828">Error loading Px pages: ' + e + '</div>';
+  }
+}
+
+async function loadPxPage(id) {
+  if (!id) return;
+  const canvas = document.getElementById('px-canvas');
+  try {
+    const res = await fetch('/api/px/' + id);
+    const page = await res.json();
+    document.getElementById('px-select').value = page.px_id;
+    canvas.innerHTML = renderPxSvg(page);
+  } catch(e) {
+    canvas.innerHTML = '<div style="color:#c62828">Error loading Px page: ' + e + '</div>';
+  }
+}
+
+function pxWidgetFromForm(values) {
+  return {
+    widget_id: values.widget_id,
+    kind: values.kind,
+    point: values.point,
+    label: values.label,
+    x: parseInt(values.x, 10),
+    y: parseInt(values.y, 10),
+  };
+}
+
+let pxPointOptionsLoaded = false;
+
+async function populatePxPointOptions() {
+  if (pxPointOptionsLoaded) return;
+  const res = await fetch('/api/points');
+  const data = await res.json();
+  const points = Object.values(data.equipment || {}).flat();
+  const select = document.getElementById('px-widget-point');
+  select.innerHTML = points.map(p => '<option value="' + p.point + '">' + p.point + '</option>').join('');
+  pxPointOptionsLoaded = true;
+}
+
+async function createPxPage() {
+  const status = document.getElementById('px-create-status');
+  const px_id = document.getElementById('px-new-id').value.trim();
+  const display_name = document.getElementById('px-new-name').value.trim();
+  const facility = document.getElementById('px-new-facility').value.trim();
+  const role = document.getElementById('px-editor-role').value;
+  const params = new URLSearchParams({px_id, display_name, role});
+  if (facility) params.set('facility', facility);
+  try {
+    const res = await fetch('/api/px?' + params.toString(), {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) {
+      status.style.color = '#c62828';
+      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      return;
+    }
+    status.style.color = '#2e7d32';
+    status.textContent = 'Created ' + data.px_id;
+    pxLoaded = false;
+    await loadPxList();
+  } catch (e) {
+    status.style.color = '#c62828';
+    status.textContent = 'Error: ' + e;
+  }
+}
+
+async function addPxWidget() {
+  const status = document.getElementById('px-save-status');
+  const px_id = document.getElementById('px-select').value;
+  if (!px_id) { status.textContent = 'Select a page first.'; return; }
+
+  const widget = pxWidgetFromForm({
+    widget_id: document.getElementById('px-widget-id').value.trim(),
+    kind: document.getElementById('px-widget-kind').value,
+    point: document.getElementById('px-widget-point').value,
+    label: document.getElementById('px-widget-label').value.trim(),
+    x: document.getElementById('px-widget-x').value,
+    y: document.getElementById('px-widget-y').value,
+  });
+
+  try {
+    const current = await (await fetch('/api/px/' + px_id)).json();
+    const widgets = current.widgets.map(w => ({widget_id: w.widget_id, kind: w.kind, point: w.point, label: w.label, x: w.x, y: w.y}));
+    widgets.push(widget);
+
+    const role = document.getElementById('px-editor-role').value;
+    const res = await fetch('/api/px/' + px_id + '/save?' + new URLSearchParams({role}).toString(), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({widgets}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.style.color = '#c62828';
+      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      return;
+    }
+    status.style.color = '#2e7d32';
+    status.textContent = 'Saved. ' + data.widgets.length + ' widgets.';
+    await loadPxPage(px_id);
+  } catch (e) {
+    status.style.color = '#c62828';
+    status.textContent = 'Error: ' + e;
+  }
+}
+
+function renderPxSvg(page) {
+  const widgets = page.widgets;
+  let maxX = 0, maxY = 0;
+  widgets.forEach(w => { maxX = Math.max(maxX, w.x + 170); maxY = Math.max(maxY, w.y + 90); });
+  const ductY = 175, ductH = 26;
+
+  let svg = '<svg width="100%" viewBox="0 0 ' + (maxX + 30) + ' ' + (maxY + 20) + '" style="background:#eef3e6;border:1px solid #c4d4b0;border-radius:4px;">';
+  svg += '<rect x="10" y="' + ductY + '" width="' + (maxX - 10) + '" height="' + ductH + '" fill="#cfd8bf" stroke="#8aa878" stroke-width="1"/>';
+  svg += '<text x="16" y="' + (ductY - 6) + '" font-size="10" fill="#556" font-family="monospace">supply air →</text>';
+  widgets.forEach(w => { svg += renderPxWidget(w); });
+  svg += '</svg>';
+  return svg;
+}
+
+function renderPxWidget(w) {
+  const W = 150, H = 70;
+  let badge = '';
+  if (w.driven_by === 'override') badge = '<tspan fill="#7b1fa2">override</tspan>';
+  else if (w.driven_by === 'schedule') badge = '<tspan fill="#2e7d32">schedule</tspan>';
+
+  let valueText;
+  if (w.kind === 'bool') {
+    valueText = w.value ? 'ON' : 'OFF';
+  } else {
+    valueText = (typeof w.value === 'number' ? w.value.toFixed(1) : '—') + (w.units && w.units !== 'bool' ? ' ' + w.units : '');
+  }
+
+  let extra = '';
+  if (w.kind === 'gauge' && typeof w.value === 'number') {
+    const pct = Math.max(0, Math.min(100, w.value));
+    extra = '<rect x="' + (w.x + 8) + '" y="' + (w.y + 52) + '" width="' + (W - 16) + '" height="8" rx="3" fill="#e0e8d8" stroke="#b8cca0"/>' +
+      '<rect x="' + (w.x + 8) + '" y="' + (w.y + 52) + '" width="' + ((W - 16) * pct / 100) + '" height="8" rx="3" fill="#4a8a2e"/>';
+  }
+
+  const boolFill = w.kind === 'bool' ? (w.value ? '#e8f5e9' : '#eceff1') : '#fff';
+  const boolStroke = w.kind === 'bool' ? (w.value ? '#2e7d32' : '#90a4ae') : '#2d4a1e';
+
+  return '' +
+    '<g>' +
+    '<rect x="' + w.x + '" y="' + w.y + '" width="' + W + '" height="' + H + '" rx="5" fill="' + boolFill + '" stroke="' + boolStroke + '" stroke-width="1.3"/>' +
+    '<text x="' + (w.x + 8) + '" y="' + (w.y + 16) + '" font-size="10" fill="#556">' + w.label + '</text>' +
+    '<text x="' + (w.x + 8) + '" y="' + (w.y + 36) + '" font-size="15" fill="#2d4a1e" font-weight="700" font-family="monospace">' + valueText + '</text>' +
+    (badge ? '<text x="' + (w.x + 8) + '" y="' + (w.y + 50) + '" font-size="9" font-family="monospace">driven by ' + badge + '</text>' : '') +
+    extra +
+    '</g>';
 }
 
 let activeTroubleTicket = null;
