@@ -152,9 +152,13 @@ def validate_block(block: dict[str, Any]) -> list[str]:
     if errors:
         return errors
 
-    if block["type"] not in BLOCK_SLOTS:
+    if not isinstance(block["block_id"], str):
+        errors.append(f"block_id must be a string, got {block['block_id']!r}")
+    if not isinstance(block["type"], str) or block["type"] not in BLOCK_SLOTS:
         errors.append(f"unknown block type {block['type']!r} (must be one of {sorted(BLOCK_SLOTS)})")
-    if not (0 <= block["x"] <= CANVAS_MAX) or not (0 <= block["y"] <= CANVAS_MAX):
+    if not isinstance(block["x"], (int, float)) or not isinstance(block["y"], (int, float)):
+        errors.append(f"block {block['block_id']!r} has non-numeric x/y position")
+    elif not (0 <= block["x"] <= CANVAS_MAX) or not (0 <= block["y"] <= CANVAS_MAX):
         errors.append(f"block {block['block_id']!r} position out of bounds (0-{CANVAS_MAX})")
     return errors
 
@@ -200,14 +204,15 @@ def validate_wiresheet(
     for block in ws["blocks"]:
         errors.extend(validate_block(block))
         bid = block.get("block_id")
-        if bid in seen_block_ids:
-            errors.append(f"duplicate block_id {bid!r} on wiresheet {ws['wiresheet_id']!r}")
-        seen_block_ids.add(bid)
+        if isinstance(bid, str):
+            if bid in seen_block_ids:
+                errors.append(f"duplicate block_id {bid!r} on wiresheet {ws['wiresheet_id']!r}")
+            seen_block_ids.add(bid)
 
     if errors:
         return errors
 
-    blocks_by_id = {b["block_id"]: b for b in ws["blocks"]}
+    blocks_by_id = {b["block_id"]: b for b in ws["blocks"] if isinstance(b.get("block_id"), str)}
     seen_targets: set[tuple[str, str]] = set()
     for link in ws["links"]:
         errors.extend(validate_link(link, blocks_by_id))
@@ -272,6 +277,24 @@ def self_test() -> int:
 
     errs = validate_wiresheet(good_ws, [good_ws], is_create=True)
     assert any("already exists" in e for e in errs), errs
+
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": ["not", "a", "string"], "x": 0, "y": 0}]},
+        [], is_create=True,
+    )
+    assert any("unknown block type" in e for e in errs), errs
+
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "Constant", "x": "bad", "y": 0, "config": {"value": 1.0}}]},
+        [], is_create=True,
+    )
+    assert any("non-numeric" in e for e in errs), errs
+
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": ["not", "a", "string"], "type": "Constant", "x": 0, "y": 0, "config": {"value": 1.0}}]},
+        [], is_create=True,
+    )
+    assert any("block_id must be a string" in e for e in errs), errs
 
     print("wiresheets self-test passed")
     return 0
