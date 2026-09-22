@@ -295,7 +295,6 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <input id="ws-new-id" placeholder="wiresheet_id" style="width:220px;">
           <input id="ws-new-name" placeholder="Display name" style="width:220px;">
-          <select id="ws-editor-role"><option value="technician">technician</option><option value="admin">admin</option></select>
           <button onclick="createWireSheet()">Create Sheet</button>
         </div>
         <div id="ws-create-status" style="font-size:0.78rem;margin-bottom:10px;"></div>
@@ -373,7 +372,6 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
           <input id="px-new-id" placeholder="px_id (e.g. AHU3_SCHEMATIC)" style="width:220px;">
           <input id="px-new-name" placeholder="Display name" style="width:220px;">
           <input id="px-new-facility" placeholder="Facility (optional)" style="width:140px;">
-          <select id="px-editor-role"><option value="technician">technician</option><option value="admin">admin</option></select>
           <button onclick="createPxPage()">Create Page</button>
         </div>
         <div id="px-create-status" style="font-size:0.78rem;margin-bottom:10px;"></div>
@@ -969,7 +967,7 @@ async function createWireSheet() {
   const status = document.getElementById('ws-create-status');
   const wiresheet_id = document.getElementById('ws-new-id').value.trim();
   const display_name = document.getElementById('ws-new-name').value.trim();
-  const role = document.getElementById('ws-editor-role').value;
+  const role = selectedRole();
   const params = new URLSearchParams({wiresheet_id, display_name, role});
   try {
     const res = await fetch('/api/wiresheets?' + params.toString(), {method: 'POST'});
@@ -1039,7 +1037,7 @@ async function addWireSheetBlock() {
     blocks.push(block);
     const links = current.links;
 
-    const role = document.getElementById('ws-editor-role').value;
+    const role = selectedRole();
     const res = await fetch('/api/wiresheets/' + id + '/save?' + new URLSearchParams({role}).toString(), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1078,7 +1076,7 @@ async function addWireSheetLink() {
     const blocks = current.blocks.map(b => ({block_id: b.block_id, type: b.type, config: b.config || {}, x: b.x, y: b.y}));
     const links = current.links.concat([link]);
 
-    const role = document.getElementById('ws-editor-role').value;
+    const role = selectedRole();
     const res = await fetch('/api/wiresheets/' + id + '/save?' + new URLSearchParams({role}).toString(), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1215,7 +1213,10 @@ async function populatePxPointOptions() {
   if (pxPointOptionsLoaded) return;
   const res = await fetch('/api/points');
   const data = await res.json();
-  const points = Object.values(data.equipment || {}).flat();
+  // Building 822 is a Trane site with its own front end at /tracer. It shares
+  // this API but must not appear in this Tridium supervisor. Filter at the
+  // boundary so every downstream render stays clean (matches loadPoints()).
+  const points = Object.values(data.equipment || {}).flat().filter(p => p.facility !== 'barracks822');
   const select = document.getElementById('px-widget-point');
   select.innerHTML = points.map(p => '<option value="' + p.point + '">' + p.point + '</option>').join('');
   pxPointOptionsLoaded = true;
@@ -1226,7 +1227,7 @@ async function createPxPage() {
   const px_id = document.getElementById('px-new-id').value.trim();
   const display_name = document.getElementById('px-new-name').value.trim();
   const facility = document.getElementById('px-new-facility').value.trim();
-  const role = document.getElementById('px-editor-role').value;
+  const role = selectedRole();
   const params = new URLSearchParams({px_id, display_name, role});
   if (facility) params.set('facility', facility);
   try {
@@ -1266,7 +1267,7 @@ async function addPxWidget() {
     const widgets = current.widgets.map(w => ({widget_id: w.widget_id, kind: w.kind, point: w.point, label: w.label, x: w.x, y: w.y}));
     widgets.push(widget);
 
-    const role = document.getElementById('px-editor-role').value;
+    const role = selectedRole();
     const res = await fetch('/api/px/' + px_id + '/save?' + new URLSearchParams({role}).toString(), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
