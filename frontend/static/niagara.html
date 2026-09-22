@@ -286,11 +286,39 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
         </p>
         <div class="toolbar">
           <label for="wiresheet-select">Program:</label>
-          <select id="wiresheet-select" onchange="loadWireSheet(this.value)"></select>
+          <select id="wiresheet-select" onchange="loadWireSheet(this.value); refreshWireSheetLinkSlotOptions();"></select>
           <button onclick="loadWireSheet(document.getElementById('wiresheet-select').value)">&#8635; Refresh</button>
         </div>
         <div id="wiresheet-desc" class="meta-row"></div>
         <div id="wiresheet-canvas"></div>
+        <div class="section-title" style="margin-top:16px;">Create Wire Sheet</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <input id="ws-new-id" placeholder="wiresheet_id" style="width:220px;">
+          <input id="ws-new-name" placeholder="Display name" style="width:220px;">
+          <select id="ws-editor-role"><option value="technician">technician</option><option value="admin">admin</option></select>
+          <button onclick="createWireSheet()">Create Sheet</button>
+        </div>
+        <div id="ws-create-status" style="font-size:0.78rem;margin-bottom:10px;"></div>
+
+        <div class="section-title">Add Block</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <input id="ws-block-id" placeholder="block_id" style="width:120px;">
+          <select id="ws-block-type"></select>
+          <input id="ws-block-x" placeholder="x" type="number" value="40" style="width:70px;">
+          <input id="ws-block-y" placeholder="y" type="number" value="40" style="width:70px;">
+          <button onclick="addWireSheetBlock()">Add Block</button>
+        </div>
+
+        <div class="section-title">Add Link</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <select id="ws-link-from-block" onchange="refreshWireSheetLinkSlotOptions()"></select>
+          <select id="ws-link-from-slot"></select>
+          <span>&#8594;</span>
+          <select id="ws-link-to-block" onchange="refreshWireSheetLinkSlotOptions()"></select>
+          <select id="ws-link-to-slot"></select>
+          <button onclick="addWireSheetLink()">Add Link</button>
+        </div>
+        <div id="ws-save-status" style="font-size:0.78rem;"></div>
       </div>
 
       <!-- PLATFORM -->
@@ -901,6 +929,172 @@ function renderWireSheetSvg(ws) {
 
   svg += '</svg>';
   return svg;
+}
+
+function wireSheetBlockFromForm(values) {
+  return {
+    block_id: values.block_id,
+    type: values.type,
+    config: {},
+    x: parseInt(values.x, 10),
+    y: parseInt(values.y, 10),
+  };
+}
+
+function wireSheetLinkFromForm(values) {
+  return {
+    from: values.from_block,
+    from_slot: values.from_slot,
+    to: values.to_block,
+    to_slot: values.to_slot,
+  };
+}
+
+let wsBlockTypes = {};
+let wsBlockTypesLoaded = false;
+
+async function populateWireSheetBlockTypeOptions() {
+  if (wsBlockTypesLoaded) return;
+  const res = await fetch('/api/wiresheets/block-types');
+  const data = await res.json();
+  wsBlockTypes = data.block_types;
+  const select = document.getElementById('ws-block-type');
+  select.innerHTML = Object.keys(wsBlockTypes).map(t => '<option value="' + t + '">' + t + '</option>').join('');
+  wsBlockTypesLoaded = true;
+}
+
+async function createWireSheet() {
+  const status = document.getElementById('ws-create-status');
+  const wiresheet_id = document.getElementById('ws-new-id').value.trim();
+  const display_name = document.getElementById('ws-new-name').value.trim();
+  const role = document.getElementById('ws-editor-role').value;
+  const params = new URLSearchParams({wiresheet_id, display_name, role});
+  try {
+    const res = await fetch('/api/wiresheets?' + params.toString(), {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) {
+      status.style.color = '#c62828';
+      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      return;
+    }
+    status.style.color = '#2e7d32';
+    status.textContent = 'Created ' + data.wiresheet_id;
+    const listRes = await fetch('/api/wiresheets');
+    const list = await listRes.json();
+    const select = document.getElementById('wiresheet-select');
+    select.innerHTML = list.wiresheets.map(w => '<option value="' + w.wiresheet_id + '">' + w.display_name + '</option>').join('');
+    select.value = data.wiresheet_id;
+    await loadWireSheet(data.wiresheet_id);
+    await refreshWireSheetLinkSlotOptions();
+  } catch (e) {
+    status.style.color = '#c62828';
+    status.textContent = 'Error: ' + e;
+  }
+}
+
+async function refreshWireSheetLinkSlotOptions() {
+  await populateWireSheetBlockTypeOptions();
+  const id = document.getElementById('wiresheet-select').value;
+  if (!id) return;
+  const ws = await (await fetch('/api/wiresheets/' + id)).json();
+  const blocksById = {};
+  ws.blocks.forEach(b => { blocksById[b.block_id] = b; });
+
+  const fromSelect = document.getElementById('ws-link-from-block');
+  const toSelect = document.getElementById('ws-link-to-block');
+  const priorFrom = fromSelect.value;
+  const priorTo = toSelect.value;
+  const blockOptions = ws.blocks.map(b => '<option value="' + b.block_id + '">' + b.block_id + ' (' + b.type + ')</option>').join('');
+  fromSelect.innerHTML = blockOptions;
+  toSelect.innerHTML = blockOptions;
+  if (priorFrom) fromSelect.value = priorFrom;
+  if (priorTo) toSelect.value = priorTo;
+
+  const fromBlock = blocksById[fromSelect.value];
+  const fromSlots = fromBlock ? (wsBlockTypes[fromBlock.type] || {outputs: []}).outputs : [];
+  document.getElementById('ws-link-from-slot').innerHTML = fromSlots.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+
+  const toBlock = blocksById[toSelect.value];
+  const toSlots = toBlock ? (wsBlockTypes[toBlock.type] || {inputs: []}).inputs : [];
+  document.getElementById('ws-link-to-slot').innerHTML = toSlots.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+}
+
+async function addWireSheetBlock() {
+  const status = document.getElementById('ws-save-status');
+  const id = document.getElementById('wiresheet-select').value;
+  if (!id) { status.textContent = 'Select a Wire Sheet first.'; return; }
+
+  const block = wireSheetBlockFromForm({
+    block_id: document.getElementById('ws-block-id').value.trim(),
+    type: document.getElementById('ws-block-type').value,
+    x: document.getElementById('ws-block-x').value,
+    y: document.getElementById('ws-block-y').value,
+  });
+
+  try {
+    const current = await (await fetch('/api/wiresheets/' + id)).json();
+    const blocks = current.blocks.map(b => ({block_id: b.block_id, type: b.type, config: b.config || {}, x: b.x, y: b.y}));
+    blocks.push(block);
+    const links = current.links;
+
+    const role = document.getElementById('ws-editor-role').value;
+    const res = await fetch('/api/wiresheets/' + id + '/save?' + new URLSearchParams({role}).toString(), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({blocks, links}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.style.color = '#c62828';
+      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      return;
+    }
+    status.style.color = '#2e7d32';
+    status.textContent = 'Saved. ' + data.blocks.length + ' blocks.';
+    await loadWireSheet(id);
+    await refreshWireSheetLinkSlotOptions();
+  } catch (e) {
+    status.style.color = '#c62828';
+    status.textContent = 'Error: ' + e;
+  }
+}
+
+async function addWireSheetLink() {
+  const status = document.getElementById('ws-save-status');
+  const id = document.getElementById('wiresheet-select').value;
+  if (!id) { status.textContent = 'Select a Wire Sheet first.'; return; }
+
+  const link = wireSheetLinkFromForm({
+    from_block: document.getElementById('ws-link-from-block').value,
+    from_slot: document.getElementById('ws-link-from-slot').value,
+    to_block: document.getElementById('ws-link-to-block').value,
+    to_slot: document.getElementById('ws-link-to-slot').value,
+  });
+
+  try {
+    const current = await (await fetch('/api/wiresheets/' + id)).json();
+    const blocks = current.blocks.map(b => ({block_id: b.block_id, type: b.type, config: b.config || {}, x: b.x, y: b.y}));
+    const links = current.links.concat([link]);
+
+    const role = document.getElementById('ws-editor-role').value;
+    const res = await fetch('/api/wiresheets/' + id + '/save?' + new URLSearchParams({role}).toString(), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({blocks, links}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.style.color = '#c62828';
+      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      return;
+    }
+    status.style.color = '#2e7d32';
+    status.textContent = 'Saved. ' + data.links.length + ' links.';
+    await loadWireSheet(id);
+  } catch (e) {
+    status.style.color = '#c62828';
+    status.textContent = 'Error: ' + e;
+  }
 }
 
 async function loadPlatform() {
