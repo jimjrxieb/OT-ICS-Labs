@@ -46,6 +46,8 @@ def validate_widget(widget: dict[str, Any], valid_points: set[str]) -> list[str]
     if errors:
         return errors
 
+    if not isinstance(widget["widget_id"], str) or not widget["widget_id"].strip():
+        errors.append(f"widget_id must be a non-blank string, got {widget['widget_id']!r}")
     if not isinstance(widget["kind"], str) or widget["kind"] not in KNOWN_WIDGET_KINDS:
         errors.append(
             f"unknown widget kind {widget['kind']!r} (must be one of {sorted(KNOWN_WIDGET_KINDS)})"
@@ -73,6 +75,11 @@ def validate_page(
     if errors:
         return errors
 
+    if not page["px_id"].strip():
+        errors.append("px_id must not be blank")
+    elif "/" in page["px_id"] or "\\" in page["px_id"] or ".." in page["px_id"]:
+        errors.append(f"px_id {page['px_id']!r} contains unsafe characters")
+
     if is_create and any(p["px_id"] == page["px_id"] for p in existing_pages):
         errors.append(f"px_id {page['px_id']!r} already exists")
 
@@ -80,9 +87,10 @@ def validate_page(
     for widget in page["widgets"]:
         errors.extend(validate_widget(widget, valid_points))
         wid = widget.get("widget_id")
-        if wid in seen_widget_ids:
-            errors.append(f"duplicate widget_id {wid!r} on page {page['px_id']!r}")
-        seen_widget_ids.add(wid)
+        if isinstance(wid, str):
+            if wid in seen_widget_ids:
+                errors.append(f"duplicate widget_id {wid!r} on page {page['px_id']!r}")
+            seen_widget_ids.add(wid)
 
     return errors
 
@@ -119,6 +127,30 @@ def self_test() -> int:
 
     errs = validate_widget({**good_widget, "x": "not_a_number"}, valid_points)
     assert any("non-numeric" in e for e in errs), errs
+
+    # Fix 2b: a widget with a non-string widget_id must be rejected, not raise TypeError.
+    errs = validate_widget({**good_widget, "widget_id": ["not", "a", "string"]}, valid_points)
+    assert any("widget_id must be a non-blank string" in e for e in errs), errs
+
+    errs = validate_page(
+        {"px_id": "PAGE4", "display_name": "P4", "widgets": [{**good_widget, "widget_id": ["not", "a", "string"]}]},
+        existing, valid_points, is_create=True,
+    )
+    assert any("widget_id must be a non-blank string" in e for e in errs), errs
+
+    # Fix 3: blank px_id and widget_id must be rejected.
+    errs = validate_widget({**good_widget, "widget_id": "   "}, valid_points)
+    assert any("widget_id must be a non-blank string" in e for e in errs), errs
+
+    errs = validate_page(
+        {"px_id": "   ", "display_name": "Blank", "widgets": []}, existing, valid_points, is_create=True,
+    )
+    assert any("px_id must not be blank" in e for e in errs), errs
+
+    errs = validate_page(
+        {"px_id": "PAGE/5", "display_name": "Unsafe", "widgets": []}, existing, valid_points, is_create=True,
+    )
+    assert any("unsafe characters" in e for e in errs), errs
 
     print("px_pages self-test passed")
     return 0
