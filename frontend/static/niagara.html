@@ -301,6 +301,7 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
         <div id="ws-create-status" style="font-size:0.78rem;margin-bottom:10px;"></div>
 
         <div class="section-title">Add Block</div>
+        <!-- Layer 1 note: block types needing config (Constant, ScheduleRef, PointRef, PointWriteRef) will fail server-side validation until a config-field UI ships (Layer 1.5/2). -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <input id="ws-block-id" placeholder="block_id" style="width:120px;">
           <select id="ws-block-type"></select>
@@ -834,6 +835,7 @@ async function loadWireSheetList() {
     select.innerHTML = data.wiresheets.map(w => '<option value="' + w.wiresheet_id + '">' + w.display_name + '</option>').join('');
     wireSheetLoaded = true;
     if (data.wiresheets.length) await loadWireSheet(data.wiresheets[0].wiresheet_id);
+    await refreshWireSheetLinkSlotOptions();
   } catch(e) {
     document.getElementById('wiresheet-canvas').innerHTML = '<div style="color:#c62828">Error loading Wire Sheets: ' + e + '</div>';
   }
