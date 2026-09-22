@@ -17,6 +17,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import platform_admin, px_pages, schedules, wiresheets
+
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "data" / "output"
 INPUT_DIR = ROOT / "data" / "input"
@@ -35,6 +37,11 @@ TROUBLE_CALL_LOG_FILE = OUTPUT_DIR / "trouble_call_log.jsonl"
 class DiagnosisRequest(BaseModel):
     guessed_equipment: str
     guessed_category: str
+
+
+class WireSheetSaveRequest(BaseModel):
+    blocks: list[dict[str, Any]]
+    links: list[dict[str, Any]]
 
 app = FastAPI(title="Synthetic Hospital BAS", version="1.0.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -119,6 +126,58 @@ def _coerce_point_value(point: dict[str, Any], value: float) -> float | int:
             raise HTTPException(status_code=400, detail="Boolean commands must be 0 or 1")
         return int(value)
     return round(float(value), 3)
+
+
+def _schedule_baseline(point_name: str, now: datetime | None = None) -> dict[str, Any] | None:
+    """A Schedule-driven baseline for a point, if one links to it.
+
+    Mirrors Niagara's priority array: this is consulted only when no
+    operator override is active for the point (the caller enforces that).
+    """
+    schedule = schedules.schedule_for_point(point_name)
+    if schedule is None:
+        return None
+    resolved = schedules.effective_output(schedule, now or datetime.now(timezone.utc))
+    return {
+        "schedule_id": schedule["schedule_id"],
+        "occupied": resolved["value"],
+        "source": resolved["source"],
+        "value": schedules.linked_point_baseline(schedule, point_name, resolved["value"]),
+    }
+
+
+def _resolve_point_value(
+    point_name: str,
+    snapshot: dict[str, Any],
+    overrides: dict[str, dict[str, Any]],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """A point's effective value plus what's driving it.
+
+    Priority order mirrors Niagara's priority array: an operator override
+    always wins; failing that, a Schedule's linked baseline; failing
+    that, the simulator's computed value.
+    """
+    value = snapshot["points"].get(point_name)
+    override = overrides.get(point_name)
+    driven_by = "computed"
+    schedule_id = None
+    if override:
+        value = override["value"]
+        driven_by = "override"
+    else:
+        baseline = _schedule_baseline(point_name, now)
+        if baseline and baseline["value"] is not None:
+            value = baseline["value"]
+            driven_by = "schedule"
+            schedule_id = baseline["schedule_id"]
+    return {
+        "value": value,
+        "driven_by": driven_by,
+        "schedule_id": schedule_id,
+        "overridden": bool(override),
+        "operator_note": override.get("reason") if override else None,
+    }
 
 
 def _require_command_role(role: str) -> None:
@@ -221,24 +280,24 @@ def get_points() -> dict[str, Any]:
     for pt in input_pts:
         name = pt["point"]
         equip = pt["equipment"]
-        value = snapshot["points"].get(name)
-        override = overrides.get(name)
-        if override:
-            value = override["value"]
+        resolved = _resolve_point_value(name, snapshot, overrides)
         entry = {
             "point": name,
             "equipment": equip,
             "facility": pt.get("facility"),
             "type": pt["type"],
             "units": pt["units"],
-            "value": value,
+            "value": resolved["value"],
             "normal_min": pt["normal_min"],
             "normal_max": pt["normal_max"],
             "writable": pt["writable"],
             "critical": pt["critical"],
             "status": "alarm" if name in alarmed else "normal",
-            "overridden": bool(override),
-            "operator_note": override.get("reason") if override else None,
+            "overridden": resolved["overridden"],
+            "operator_note": resolved["operator_note"],
+            "states": pt.get("states"),
+            "driven_by": resolved["driven_by"],
+            "schedule_id": resolved["schedule_id"],
         }
         by_equipment.setdefault(equip, []).append(entry)
 
@@ -261,24 +320,24 @@ def get_point(point_name: str) -> dict[str, Any]:
 
     for pt in input_pts:
         if pt["point"] == point_name:
-            value = snapshot["points"].get(point_name)
-            override = overrides.get(point_name)
-            if override:
-                value = override["value"]
+            resolved = _resolve_point_value(point_name, snapshot, overrides)
             result = {
                 "point": point_name,
                 "equipment": pt["equipment"],
                 "facility": pt.get("facility"),
                 "type": pt["type"],
                 "units": pt["units"],
-                "value": value,
+                "value": resolved["value"],
                 "normal_min": pt["normal_min"],
                 "normal_max": pt["normal_max"],
                 "writable": pt["writable"],
                 "critical": pt["critical"],
                 "status": "alarm" if point_name in alarmed else "normal",
-                "overridden": bool(override),
-                "operator_note": override.get("reason") if override else None,
+                "overridden": resolved["overridden"],
+                "operator_note": resolved["operator_note"],
+                "states": pt.get("states"),
+                "driven_by": resolved["driven_by"],
+                "schedule_id": resolved["schedule_id"],
             }
             if point_name in alarmed:
                 result["alarm"] = alarmed[point_name]
@@ -325,6 +384,256 @@ def get_equipment() -> dict[str, Any]:
     return _load_input_equipment()
 
 
+@app.get("/api/schedules")
+def get_schedules() -> dict[str, Any]:
+    """All Schedule components and their current effective output."""
+    now = datetime.now(timezone.utc)
+    result = []
+    for schedule in schedules.load_schedules():
+        resolved = schedules.effective_output(schedule, now)
+        result.append({
+            "schedule_id": schedule["schedule_id"],
+            "display_name": schedule.get("display_name", schedule["schedule_id"]),
+            "type": schedule.get("type", "BooleanSchedule"),
+            "facility": schedule.get("facility"),
+            "effective_value": resolved["value"],
+            "effective_source": resolved["source"],
+            "effective_label": resolved["label"],
+            "linked_points": [link["point"] for link in schedule.get("linked_points", [])],
+        })
+    return {"generated_at": now.isoformat(), "schedules": result}
+
+
+@app.get("/api/schedules/{schedule_id}")
+def get_schedule(schedule_id: str) -> dict[str, Any]:
+    """One Schedule component's weekly pattern, exceptions, and linked points."""
+    schedule = schedules.find_schedule(schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail=f"Schedule {schedule_id!r} not found")
+    now = datetime.now(timezone.utc)
+    resolved = schedules.effective_output(schedule, now)
+    overrides = _load_overrides()
+    linked = []
+    for link in schedule.get("linked_points", []):
+        point_name = link["point"]
+        override = overrides.get(point_name)
+        linked.append({
+            "point": point_name,
+            "equipment": link["equipment"],
+            "occupied_value": link["occupied_value"],
+            "unoccupied_value": link["unoccupied_value"],
+            "current_baseline": schedules.linked_point_baseline(schedule, point_name, resolved["value"]),
+            "driven_by": "override" if override else "schedule",
+        })
+    return {
+        "schedule_id": schedule["schedule_id"],
+        "display_name": schedule.get("display_name", schedule["schedule_id"]),
+        "type": schedule.get("type", "BooleanSchedule"),
+        "facility": schedule.get("facility"),
+        "weekly": schedule.get("weekly", {}),
+        "exceptions": schedule.get("exceptions", []),
+        "default_value": schedule.get("default_value", False),
+        "effective_value": resolved["value"],
+        "effective_source": resolved["source"],
+        "effective_label": resolved["label"],
+        "linked_points": linked,
+        "generated_at": now.isoformat(),
+    }
+
+
+@app.get("/api/wiresheets")
+def get_wiresheets() -> dict[str, Any]:
+    """All Wire Sheet programs."""
+    return {
+        "wiresheets": [
+            {
+                "wiresheet_id": ws["wiresheet_id"],
+                "display_name": ws.get("display_name", ws["wiresheet_id"]),
+                "ord": ws.get("ord"),
+            }
+            for ws in wiresheets.load_wiresheets()
+        ]
+    }
+
+
+@app.get("/api/wiresheets/block-types")
+def get_wiresheet_block_types() -> dict[str, Any]:
+    """Known Wire Sheet block types and their input/output slots, for the editor's Add Block/Add Link forms."""
+    return {"block_types": wiresheets.BLOCK_SLOTS}
+
+
+@app.get("/api/wiresheets/{wiresheet_id}")
+def get_wiresheet(wiresheet_id: str) -> dict[str, Any]:
+    """One Wire Sheet's blocks and links, each block's slots resolved live."""
+    ws = wiresheets.find_wiresheet(wiresheet_id)
+    if ws is None:
+        raise HTTPException(status_code=404, detail=f"Wire Sheet {wiresheet_id!r} not found")
+
+    now = datetime.now(timezone.utc)
+    schedule_ctx = {}
+    for schedule_id in wiresheets.referenced_schedule_ids(ws):
+        schedule = schedules.find_schedule(schedule_id)
+        if schedule is not None:
+            schedule_ctx[schedule_id] = schedules.effective_output(schedule, now)["value"]
+
+    point_ctx: dict[str, Any] = {}
+    point_names = wiresheets.referenced_point_names(ws)
+    if point_names:
+        snapshot = _load_points_file()
+        overrides = _load_overrides()
+        for name in point_names:
+            point_ctx[name] = _resolve_point_value(name, snapshot, overrides, now)["value"]
+
+    resolved = wiresheets.evaluate(ws, {"schedules": schedule_ctx, "points": point_ctx})
+
+    return {
+        "wiresheet_id": ws["wiresheet_id"],
+        "display_name": ws.get("display_name", ws["wiresheet_id"]),
+        "ord": ws.get("ord"),
+        "description": ws.get("description"),
+        "blocks": [
+            {**block, "slots": wiresheets.slot_spec(block["type"]), "resolved": resolved.get(block["block_id"], {})}
+            for block in ws["blocks"]
+        ],
+        "links": ws.get("links", []),
+        "generated_at": now.isoformat(),
+    }
+
+
+@app.post("/api/wiresheets")
+def create_wiresheet(
+    wiresheet_id: str,
+    display_name: str,
+    description: str | None = None,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Create a new, empty Wire Sheet."""
+    _require_command_role(role)
+    sheets = wiresheets.load_wiresheets()
+    new_sheet = {
+        "wiresheet_id": wiresheet_id,
+        "display_name": display_name,
+        "ord": f"station:|slot:/WireSheet/{wiresheet_id}",
+        "description": description,
+        "blocks": [],
+        "links": [],
+    }
+    errors = wiresheets.validate_wiresheet(new_sheet, sheets, is_create=True)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    sheets.append(new_sheet)
+    wiresheets.save_wiresheets(sheets)
+    _append_operator_action({
+        "action": "wiresheet_created",
+        "wiresheet_id": wiresheet_id,
+        "role": role,
+        "operator_id": operator_id,
+    })
+    return new_sheet
+
+
+@app.post("/api/wiresheets/{wiresheet_id}/save")
+def save_wiresheet(
+    wiresheet_id: str,
+    body: WireSheetSaveRequest,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Replace a Wire Sheet's blocks and links."""
+    _require_command_role(role)
+    sheets = wiresheets.load_wiresheets()
+    existing = next((w for w in sheets if w["wiresheet_id"] == wiresheet_id), None)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Wire Sheet {wiresheet_id!r} not found")
+
+    candidate = {**existing, "blocks": body.blocks, "links": body.links}
+    errors = wiresheets.validate_wiresheet(candidate, sheets, is_create=False)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    platform_admin.snapshot_single_file("wiresheet-editor", wiresheet_id, "wiresheets.json", operator_id)
+    updated = [candidate if w["wiresheet_id"] == wiresheet_id else w for w in sheets]
+    wiresheets.save_wiresheets(updated)
+    _append_operator_action({
+        "action": "wiresheet_saved",
+        "wiresheet_id": wiresheet_id,
+        "role": role,
+        "operator_id": operator_id,
+        "block_count": len(body.blocks),
+        "link_count": len(body.links),
+    })
+    return candidate
+
+
+@app.post("/api/wiresheets/{wiresheet_id}/backup")
+def backup_wiresheet(
+    wiresheet_id: str,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Explicit backup of the Wire Sheet store before hand-editing."""
+    _require_command_role(role)
+    if wiresheets.find_wiresheet(wiresheet_id) is None:
+        raise HTTPException(status_code=404, detail=f"Wire Sheet {wiresheet_id!r} not found")
+    entry = platform_admin.snapshot_single_file("wiresheet-editor", wiresheet_id, "wiresheets.json", operator_id)
+    _append_operator_action({
+        "action": "wiresheet_backup",
+        "wiresheet_id": wiresheet_id,
+        "role": role,
+        "operator_id": operator_id,
+        "backup_dir": entry["backup_dir"],
+    })
+    return entry
+
+
+@app.get("/api/px")
+def get_px_pages() -> dict[str, Any]:
+    """All Px graphic pages."""
+    return {
+        "pages": [
+            {"px_id": p["px_id"], "display_name": p.get("display_name", p["px_id"]), "ord": p.get("ord")}
+            for p in px_pages.load_px_pages()
+        ]
+    }
+
+
+@app.get("/api/px/{px_id}")
+def get_px_page(px_id: str) -> dict[str, Any]:
+    """One Px page's widgets, each bound to its point's live resolved value."""
+    page = px_pages.find_px_page(px_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Px page {px_id!r} not found")
+
+    snapshot = _load_points_file()
+    overrides = _load_overrides()
+    input_pts = {pt["point"]: pt for pt in _load_input_points()}
+    now = datetime.now(timezone.utc)
+
+    widgets = []
+    for widget in page["widgets"]:
+        point_name = widget["point"]
+        meta = input_pts.get(point_name, {})
+        resolved = _resolve_point_value(point_name, snapshot, overrides, now)
+        widgets.append({
+            **widget,
+            "value": resolved["value"],
+            "units": meta.get("units"),
+            "driven_by": resolved["driven_by"],
+            "schedule_id": resolved["schedule_id"],
+            "overridden": resolved["overridden"],
+        })
+
+    return {
+        "px_id": page["px_id"],
+        "display_name": page.get("display_name", page["px_id"]),
+        "ord": page.get("ord"),
+        "facility": page.get("facility"),
+        "widgets": widgets,
+        "generated_at": now.isoformat(),
+    }
+
+
 @app.get("/api/roles")
 def get_roles() -> dict[str, Any]:
     """Synthetic lab roles for the technician panel selector."""
@@ -351,6 +660,39 @@ def get_operator_actions() -> dict[str, Any]:
         "actions": actions[-50:],
         "data_boundary": "synthetic lab operator action only",
     }
+
+
+@app.get("/api/platform/stations")
+def get_platform_stations() -> dict[str, Any]:
+    """Station topology for the Platform tab (synthetic host/license info)."""
+    return {"stations": platform_admin.load_stations()}
+
+
+@app.get("/api/platform/backups")
+def get_platform_backups() -> dict[str, Any]:
+    """Distribution backup history."""
+    return {"backups": platform_admin.load_backup_log()}
+
+
+@app.post("/api/platform/backup")
+def post_platform_backup(
+    station_id: str,
+    role: str = "viewer",
+    operator_id: str = "eng-workbench",
+) -> dict[str, Any]:
+    """Take a distribution backup of data/input/ -- the one real Platform action."""
+    _require_command_role(role)
+    if platform_admin.find_station(station_id) is None:
+        raise HTTPException(status_code=404, detail=f"Station {station_id!r} not found")
+    entry = platform_admin.take_backup(station_id, operator_id)
+    _append_operator_action({
+        "action": "platform_backup",
+        "role": role,
+        "operator_id": operator_id,
+        "station": station_id,
+        "backup_dir": entry["backup_dir"],
+    })
+    return entry
 
 
 @app.post("/api/trouble-calls/new")
@@ -591,3 +933,101 @@ def run_scenario(scenario: str, steps: int = 12) -> dict[str, Any]:
         "alarm_count": len(alarms),
         "data_boundary": snapshot.get("data_boundary"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Building 822 — Tracer SC topology, chiller walk-up, front end
+# ---------------------------------------------------------------------------
+
+CONNECTION_POINTS = {
+    "SC-822-01": {"label": "Tracer SC-822-01 (Ethernet)",
+                  "trunks": ["MSTP-01-A", "MSTP-01-B"]},
+    "SC-822-02": {"label": "Tracer SC-822-02 (Ethernet)",
+                  "trunks": ["MSTP-02-A", "MSTP-02-B"]},
+    "CHILLER-PANEL": {"label": "RTAC local panel (walk-up)", "trunks": []},
+}
+
+
+@app.get("/api/topology")
+def api_topology(from_node: str = Query("SC-822-01", alias="from")) -> dict[str, Any]:
+    """Return only what this connection point can actually reach.
+
+    Visibility is computed here, on purpose. Spec 2 makes a disconnected MS/TP
+    trunk a real fault, and the controllers behind it must be ABSENT from this
+    response rather than greyed out by the browser. Hiding them client-side
+    would make that fault a lie.
+    """
+    if from_node not in CONNECTION_POINTS:
+        raise HTTPException(status_code=404, detail=f"Unknown connection point {from_node}")
+
+    equipment = _load_input_equipment()
+    conn = CONNECTION_POINTS[from_node]
+    if from_node == "CHILLER-PANEL":
+        return {"from": from_node, "label": conn["label"], "supervisory": None, "trunks": []}
+
+    devices = equipment.get("equipment", [])
+    trunks = []
+    for trunk_id in conn["trunks"]:
+        members = [d for d in devices if d.get("parent") == trunk_id]
+        online = [d for d in members if _device_online(d["id"])]
+        trunks.append({
+            "id": trunk_id,
+            "type": "bacnet_mstp",
+            "member_count": len(members),
+            "online_count": len(online),
+            "members": [{"id": d["id"], "equipment": d["id"], "type": d["type"],
+                         "serves": d.get("serves", ""), "online": d in online}
+                        for d in online],
+        })
+    return {"from": from_node, "label": conn["label"],
+            "supervisory": {"id": from_node, "type": "Tracer SC+", "online": True},
+            "trunks": trunks}
+
+
+def _device_online(device_id: str) -> bool:
+    """Spec 1: everything is online. Spec 2 reads comm state from the fault knobs."""
+    return True
+
+
+@app.get("/api/chiller/822")
+def api_chiller_822() -> dict[str, Any]:
+    """RTAC local display. Deliberately NOT part of /api/topology.
+
+    The building has no BACnet integration to this machine. It is reachable
+    only by walking to it, which is the point: warm entering water is visible
+    from inside 822, but the reason is not.
+    """
+    try:
+        state = json.loads((OUTPUT_DIR / "state_822.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        raise HTTPException(status_code=503,
+                            detail="Building 822 has not been simulated yet. "
+                                   "Run: python3 simulator/bas_sim.py --scenario normal --steps 60")
+    ch = state.get("_chiller")
+    if not ch:
+        raise HTTPException(status_code=503, detail="No chiller state in state_822.json")
+    return {
+        "unit": "CHILLER-RTAC-822",
+        "model_family": "Trane RTAC air-cooled helical rotary, ~155 nominal tons",
+        "serial": "SYNTHETIC-822-0001",
+        "reference": "RTAC-SVX01M-EN",
+        "integration": "None — local display only, no BACnet to SC-822",
+        "evap_entering_f": ch["ewt_f"],
+        "evap_leaving_f": ch["lwt_f"],
+        "evap_leaving_setpoint_f": ch["lwt_f"] if ch["active_diag"] == "None" else 44.0,
+        "ambient_f": ch["ambient_f"],
+        "pct_capacity": ch["pct_capacity"],
+        "available_tons": ch["available_tons"],
+        "load_tons": ch["load_tons"],
+        "circuits": [
+            {"id": 1, "running": ch["ckt1_on"], "condenser_fan_ok": ch["ckt1_fan_ok"]},
+            {"id": 2, "running": ch["ckt2_on"], "condenser_fan_ok": ch["ckt2_fan_ok"]},
+        ],
+        "active_diagnostic": ch["active_diag"],
+    }
+
+
+@app.get("/tracer", response_class=HTMLResponse)
+def tracer_page() -> HTMLResponse:
+    page = STATIC_DIR / "tracer.html"
+    return HTMLResponse(content=page.read_text(encoding="utf-8"))
