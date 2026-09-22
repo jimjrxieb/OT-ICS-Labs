@@ -46,6 +46,16 @@ REQUIRED_CONFIG_KEYS: dict[str, list[str]] = {
     "PointWriteRef": ["point"],
 }
 
+# Config keys that get used as lookup/reference identifiers elsewhere
+# (referenced_point_names(), referenced_schedule_ids() put these straight
+# into a set) and so must be strings -- unlike Constant's "value", which is
+# only ever returned as an output and has no such constraint.
+STRING_CONFIG_KEYS: dict[str, list[str]] = {
+    "ScheduleRef": ["schedule_id"],
+    "PointRef": ["point"],
+    "PointWriteRef": ["point"],
+}
+
 
 def validate_block_config(block: dict[str, Any]) -> list[str]:
     block_type = block.get("type")
@@ -57,11 +67,21 @@ def validate_block_config(block: dict[str, Any]) -> list[str]:
     config = block.get("config")
     if not isinstance(config, dict):
         return [f"block {block.get('block_id')!r} config must be an object"]
-    return [
-        f"block {block.get('block_id')!r} of type {block.get('type')!r} is missing required config key {key!r}"
+
+    errors = [
+        f"block {block.get('block_id')!r} of type {block_type!r} is missing required config key {key!r}"
         for key in required
         if key not in config
     ]
+    if errors:
+        return errors
+
+    for key in STRING_CONFIG_KEYS.get(block_type, []):
+        if not isinstance(config[key], str):
+            errors.append(
+                f"block {block.get('block_id')!r} config key {key!r} must be a string, got {config[key]!r}"
+            )
+    return errors
 
 
 def slot_spec(block_type: str) -> dict[str, list[str]]:
@@ -363,6 +383,40 @@ def self_test() -> int:
         [], is_create=True,
     )
     assert any("type error" in e for e in errs), errs
+
+    # Regression: PointWriteRef/PointRef/ScheduleRef config values that are
+    # present but not strings (e.g. a list) must be rejected, not silently
+    # pass validation and later crash referenced_point_names()/
+    # referenced_schedule_ids() with an unhashable-type TypeError.
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "PointWriteRef", "x": 0, "y": 0,
+                                  "config": {"point": ["RTU1_SAT"]}}]},
+        [], is_create=True,
+    )
+    assert any("config key 'point' must be a string" in e for e in errs), errs
+
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "PointRef", "x": 0, "y": 0,
+                                  "config": {"point": 42}}]},
+        [], is_create=True,
+    )
+    assert any("config key 'point' must be a string" in e for e in errs), errs
+
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "ScheduleRef", "x": 0, "y": 0,
+                                  "config": {"schedule_id": {"nested": "dict"}}}]},
+        [], is_create=True,
+    )
+    assert any("config key 'schedule_id' must be a string" in e for e in errs), errs
+
+    # Constant's "value" has no string constraint -- numeric/bool values
+    # are legitimate and must still pass.
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "Constant", "x": 0, "y": 0,
+                                  "config": {"value": 5}}], "links": []},
+        [], is_create=True,
+    )
+    assert errs == [], errs
 
     # Fix 3: blank wiresheet_id and block_id must be rejected.
     errs = validate_wiresheet({**good_ws, "wiresheet_id": "   "}, [], is_create=True)
