@@ -13,6 +13,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HTML_PATH = path.join(__dirname, '..', 'frontend', 'static', 'niagara.html');
 
 function extractFunction(source, name) {
+  // Naive brace counter: no guard against '{'/'}' occurring inside a
+  // string or template literal. Fine for the current 3 target functions
+  // (no such literals in their bodies) -- revisit if reused on functions
+  // that contain brace characters inside strings/templates.
   const marker = 'function ' + name + '(';
   const start = source.indexOf(marker);
   if (start === -1) {
