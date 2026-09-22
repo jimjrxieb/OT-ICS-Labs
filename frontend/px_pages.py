@@ -46,13 +46,15 @@ def validate_widget(widget: dict[str, Any], valid_points: set[str]) -> list[str]
     if errors:
         return errors
 
-    if widget["kind"] not in KNOWN_WIDGET_KINDS:
+    if not isinstance(widget["kind"], str) or widget["kind"] not in KNOWN_WIDGET_KINDS:
         errors.append(
             f"unknown widget kind {widget['kind']!r} (must be one of {sorted(KNOWN_WIDGET_KINDS)})"
         )
-    if widget["point"] not in valid_points:
+    if not isinstance(widget["point"], str) or widget["point"] not in valid_points:
         errors.append(f"widget {widget['widget_id']!r} references unknown point {widget['point']!r}")
-    if not (0 <= widget["x"] <= CANVAS_MAX) or not (0 <= widget["y"] <= CANVAS_MAX):
+    if not isinstance(widget["x"], (int, float)) or not isinstance(widget["y"], (int, float)):
+        errors.append(f"widget {widget['widget_id']!r} has non-numeric x/y position")
+    elif not (0 <= widget["x"] <= CANVAS_MAX) or not (0 <= widget["y"] <= CANVAS_MAX):
         errors.append(f"widget {widget['widget_id']!r} position out of bounds (0-{CANVAS_MAX})")
     return errors
 
@@ -114,6 +116,9 @@ def self_test() -> int:
         existing, valid_points, is_create=True,
     )
     assert any("duplicate widget_id" in e for e in errs), errs
+
+    errs = validate_widget({**good_widget, "x": "not_a_number"}, valid_points)
+    assert any("non-numeric" in e for e in errs), errs
 
     print("px_pages self-test passed")
     return 0
