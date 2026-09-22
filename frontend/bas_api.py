@@ -43,6 +43,10 @@ class WireSheetSaveRequest(BaseModel):
     blocks: list[dict[str, Any]]
     links: list[dict[str, Any]]
 
+
+class PxSaveRequest(BaseModel):
+    widgets: list[dict[str, Any]]
+
 app = FastAPI(title="Synthetic Hospital BAS", version="1.0.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -632,6 +636,93 @@ def get_px_page(px_id: str) -> dict[str, Any]:
         "widgets": widgets,
         "generated_at": now.isoformat(),
     }
+
+
+@app.post("/api/px")
+def create_px_page(
+    px_id: str,
+    display_name: str,
+    facility: str | None = None,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Create a new, empty Px page."""
+    _require_command_role(role)
+    pages = px_pages.load_px_pages()
+    new_page = {
+        "px_id": px_id,
+        "display_name": display_name,
+        "ord": f"station:|slot:/Px/{px_id}",
+        "facility": facility,
+        "widgets": [],
+    }
+    valid_points = {pt["point"] for pt in _load_input_points()}
+    errors = px_pages.validate_page(new_page, pages, valid_points, is_create=True)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    pages.append(new_page)
+    px_pages.save_px_pages(pages)
+    _append_operator_action({
+        "action": "px_page_created",
+        "px_id": px_id,
+        "role": role,
+        "operator_id": operator_id,
+    })
+    return new_page
+
+
+@app.post("/api/px/{px_id}/save")
+def save_px_page(
+    px_id: str,
+    body: PxSaveRequest,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Replace a Px page's widgets."""
+    _require_command_role(role)
+    pages = px_pages.load_px_pages()
+    existing = next((p for p in pages if p["px_id"] == px_id), None)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Px page {px_id!r} not found")
+
+    candidate = {**existing, "widgets": body.widgets}
+    valid_points = {pt["point"] for pt in _load_input_points()}
+    errors = px_pages.validate_page(candidate, pages, valid_points, is_create=False)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    platform_admin.snapshot_single_file("px-editor", px_id, "px_pages.json", operator_id)
+    updated = [candidate if p["px_id"] == px_id else p for p in pages]
+    px_pages.save_px_pages(updated)
+    _append_operator_action({
+        "action": "px_page_saved",
+        "px_id": px_id,
+        "role": role,
+        "operator_id": operator_id,
+        "widget_count": len(body.widgets),
+    })
+    return candidate
+
+
+@app.post("/api/px/{px_id}/backup")
+def backup_px_page(
+    px_id: str,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Explicit backup of the Px page store before hand-editing."""
+    _require_command_role(role)
+    if px_pages.find_px_page(px_id) is None:
+        raise HTTPException(status_code=404, detail=f"Px page {px_id!r} not found")
+    entry = platform_admin.snapshot_single_file("px-editor", px_id, "px_pages.json", operator_id)
+    _append_operator_action({
+        "action": "px_page_backup",
+        "px_id": px_id,
+        "role": role,
+        "operator_id": operator_id,
+        "backup_dir": entry["backup_dir"],
+    })
+    return entry
 
 
 @app.get("/api/roles")
