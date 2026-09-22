@@ -57,6 +57,11 @@ def snapshot_single_file(kind: str, entity_id: str, filename: str, operator_id: 
     manual Platform backup apart from an editor's automatic pre-save
     snapshot.
     """
+    # Validate inputs to prevent path traversal attacks (security-standards.md rule 7)
+    for label, value in (("kind", kind), ("entity_id", entity_id), ("filename", filename)):
+        if "/" in value or "\\" in value or ".." in value:
+            raise ValueError(f"unsafe {label} for backup snapshot: {value!r}")
+
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dist_dir = BACKUP_DIR / f"{kind}-{entity_id}-{ts}.dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +129,20 @@ def self_test() -> int:
 
     log_entries = load_backup_log()
     assert any(e["backup_dir"] == entry["backup_dir"] for e in log_entries), "backup not logged"
+
+    # Validate path-traversal rejection on entity_id with ".."
+    try:
+        snapshot_single_file("platform-selftest", "../escape", "schedules.json", "self-test")
+        assert False, "expected ValueError for path-traversal entity_id"
+    except ValueError:
+        pass
+
+    # Validate path-traversal rejection on entity_id with "/"
+    try:
+        snapshot_single_file("platform-selftest", "a/b", "schedules.json", "self-test")
+        assert False, "expected ValueError for entity_id containing a slash"
+    except ValueError:
+        pass
 
     print("platform_admin self-test passed")
     return 0
