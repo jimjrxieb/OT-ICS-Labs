@@ -77,6 +77,9 @@ TUNING: dict[str, float] = {
     "LOOP_TAU_MIN": 8.0,              # loop supply lag behind chiller leaving water
     "LOOP_STANDBY_GAIN_F_PER_MIN": 0.05,  # pipe/mechanical-room heat gain with the chiller not producing
     "LOOP_MAX_F": 78.0,               # a stalled loop warms toward the building, not past it
+    "EVAP_MIN_FLOW_FRAC": 0.25,       # evaporator flow switch setpoint, fraction of design flow
+    "FLOW_PROOF_DELAY_MIN": 3.0,      # low flow must persist this long before the trip
+    "CHILLER_RESTART_MIN": 5.0,       # start sequence after a manual reset
 }
 
 DEFAULT_WEATHER = (78.0, 60.0)
@@ -114,6 +117,65 @@ CHILLER_KNOB_DEFAULTS: dict[str, Any] = {
     "condenser_fan_failed": [],   # list of circuit numbers, e.g. [1]
     "circuit_locked_out": [],     # list of circuit numbers
 }
+
+# RTAC822_ACTIVE_DIAG reports the index into this tuple. Append only: existing
+# indexes are part of the point's meaning (points.json "states").
+DIAG_STATES = ("None", "LowEvapTemp", "CondFanFail", "CircuitLockout", "LowEvapFlow")
+
+
+def _healthy_chiller_state() -> dict[str, Any]:
+    return {"tripped": False, "low_flow_min": 0.0, "restart_min": 0.0,
+            "resets": 0, "unproven_resets": 0}
+
+
+def chiller_flow_proof(chiller_state: dict[str, Any], flow_frac: float) -> None:
+    """Evaporator flow switch with a latching LowEvapFlow trip. Mutates chiller_state.
+
+    Low flow must persist FLOW_PROOF_DELAY_MIN before the trip. The trip
+    latches: restoring flow does not clear it; only reset_chiller() does.
+    """
+    cs = chiller_state
+    if cs["restart_min"] > 0.0:
+        cs["restart_min"] = max(0.0, cs["restart_min"] - STEP_MINUTES)
+    if cs["tripped"]:
+        return
+    if flow_frac < TUNING["EVAP_MIN_FLOW_FRAC"]:
+        cs["low_flow_min"] += STEP_MINUTES
+        if cs["low_flow_min"] >= TUNING["FLOW_PROOF_DELAY_MIN"]:
+            cs["tripped"] = True
+            cs["restart_min"] = 0.0
+    else:
+        cs["low_flow_min"] = 0.0
+
+
+def reset_chiller(state: dict[str, Any]) -> dict[str, bool]:
+    """Manual reset at the chiller panel.
+
+    Clears the latch and starts the restart delay. It does not check flow --
+    the flow switch does, and trips it again if the permissive is still
+    missing. A reset while flow is unproven is counted (repeated reset without
+    correcting the permissive).
+    """
+    _ensure_plant_state(state)
+    cs = state["chiller"]
+    flow = float(state.get("_loop", {}).get("flow_frac", 1.0))  # last step's measured flow
+    proven = flow >= TUNING["EVAP_MIN_FLOW_FRAC"]
+    cleared = bool(cs["tripped"])
+    cs["resets"] += 1
+    if not proven:
+        cs["unproven_resets"] += 1
+    cs["tripped"] = False
+    cs["low_flow_min"] = 0.0
+    if cleared:
+        cs["restart_min"] = TUNING["CHILLER_RESTART_MIN"]
+    return {"cleared": cleared, "flow_proven": proven}
+
+
+def _chiller_stopped(ch: dict[str, Any], loop_f: float, diag: str) -> dict[str, Any]:
+    """Chiller outputs while tripped or in its restart delay: no capacity,
+    evaporator temperatures follow the loop water."""
+    return {**ch, "lwt_f": round(loop_f, 2), "ewt_f": round(loop_f, 2), "pct_capacity": 0.0,
+            "ckt1_on": False, "ckt2_on": False, "active_diag": diag}
 
 
 def chiller_step(load_tons: float, ambient_f: float,
@@ -190,6 +252,7 @@ def _ensure_plant_state(state: dict[str, Any]) -> None:
     chw.setdefault("loop_psig", TUNING["LOOP_FILL_PSIG"])
     chw.setdefault("air_frac", 0.0)
     state.setdefault("plant_room", {"water_gal": 0.0})
+    state.setdefault("chiller", _healthy_chiller_state())
 
 
 def loop_hydraulics(chw_state: dict[str, Any], knobs: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -474,6 +537,7 @@ def cold_start_state() -> dict[str, Any]:
         "chw": {"entering_f": TUNING["CHW_SETPOINT_F"],
                 "loop_psig": TUNING["LOOP_FILL_PSIG"], "air_frac": 0.0},
         "plant_room": {"water_gal": 0.0},
+        "chiller": _healthy_chiller_state(),
     }
 
 
@@ -706,8 +770,15 @@ def step_822(state: dict[str, Any], step: int, profile: str = "design_summer",
 
     # --- plant and service entrance ----------------------------------------
     load_tons = total_btuh / 12000.0 + TUNING["CAMPUS_BASE_TONS"]
+    chiller_flow_proof(state["chiller"], flow_frac)
     ch = chiller_step(load_tons, oa_t, _knobs_for(knobs, "CHILLER-RTAC-822"))
-    state["chw"]["entering_f"] = loop_supply_temp(entering_f, ch["lwt_f"], True, total_btuh)
+    cs = state["chiller"]
+    producing = not cs["tripped"] and cs["restart_min"] <= 0.0
+    if not producing:
+        ch = _chiller_stopped(ch, entering_f, "LowEvapFlow" if cs["tripped"] else "None")
+    ch = {**ch, "tripped": cs["tripped"], "resets": cs["resets"],
+          "unproven_resets": cs["unproven_resets"]}
+    state["chw"]["entering_f"] = loop_supply_temp(entering_f, ch["lwt_f"], producing, total_btuh)
     loop = chw_loop(state["chw"]["entering_f"], total_btuh, flow_frac, chw_knobs)
     loop.update({key: hyd[key] for key in (
         "leak_gpm", "makeup_gpm", "loop_psig", "air_frac",
@@ -727,7 +798,6 @@ def step_822(state: dict[str, Any], step: int, profile: str = "design_summer",
     for dev in ("SC82201", "SC82202", "MSTP01A", "MSTP01B", "MSTP02A", "MSTP02B"):
         pts[f"{dev}_STATUS"] = 1      # spec 1 is healthy; spec 2 turns these off
 
-    diag_states = ("None", "LowEvapTemp", "CondFanFail", "CircuitLockout")
     pts["RTAC822_EVAP_ENT_TEMP"] = ch["ewt_f"]
     pts["RTAC822_EVAP_LVG_TEMP"] = ch["lwt_f"]
     pts["RTAC822_EVAP_LVG_SP"] = TUNING["CHW_SETPOINT_F"]
@@ -737,7 +807,7 @@ def step_822(state: dict[str, Any], step: int, profile: str = "design_summer",
     pts["RTAC822_CKT2_STATUS"] = 1 if ch["ckt2_on"] else 0
     pts["RTAC822_CKT1_FAN_STATUS"] = 1 if ch["ckt1_fan_ok"] else 0
     pts["RTAC822_CKT2_FAN_STATUS"] = 1 if ch["ckt2_fan_ok"] else 0
-    pts["RTAC822_ACTIVE_DIAG"] = diag_states.index(ch["active_diag"])
+    pts["RTAC822_ACTIVE_DIAG"] = DIAG_STATES.index(ch["active_diag"])
 
     state["step"] = step + 1
     state["_chiller"] = ch          # consumed by /api/chiller/822
@@ -916,6 +986,39 @@ def self_test() -> int:
         st, p = step_822(st, i, knobs={"CHILLER-RTAC-822": {"condenser_fouling": 0.5}})
         sup.append(p["CHW822_ENT_SUP_TEMP"])
     assert max(abs(a - b) for a, b in zip(sup[-10:], sup[-11:-1])) < 0.5, sup[-11:]
+
+    # --- S-001 evaporator flow proof --------------------------------------------
+    flow_trip = DIAG_STATES.index("LowEvapFlow")
+    no_pumps = {"CHW-822": {"p1_running": False}}
+    st = cold_start_state()
+    for i in range(10):
+        st, pts = step_822(st, i, knobs=no_pumps)
+    assert st["chiller"]["tripped"] and pts["RTAC822_ACTIVE_DIAG"] == flow_trip, pts["RTAC822_ACTIVE_DIAG"]
+    assert pts["RTAC822_PCT_CAPACITY"] == 0.0
+
+    # Reset without flow: the latch clears, the flow switch trips it again, and it counts.
+    r = reset_chiller(st)
+    assert r == {"cleared": True, "flow_proven": False} and st["chiller"]["unproven_resets"] == 1, r
+    for i in range(10, 20):
+        st, pts = step_822(st, i, knobs=no_pumps)
+    assert st["chiller"]["tripped"], "no flow -> the flow switch re-trips it"
+
+    # Restoring flow does not clear a latching diagnostic.
+    for i in range(20, 25):
+        st, pts = step_822(st, i)
+    assert st["chiller"]["tripped"] and pts["RTAC822_ACTIVE_DIAG"] == flow_trip
+
+    # Reset with flow proven: restarts after the delay, then holds.
+    r = reset_chiller(st)
+    assert r == {"cleared": True, "flow_proven": True} and st["chiller"]["unproven_resets"] == 1, r
+    restart = int(TUNING["CHILLER_RESTART_MIN"])
+    for i in range(25, 25 + restart - 1):
+        st, pts = step_822(st, i)
+    assert pts["RTAC822_PCT_CAPACITY"] == 0.0 and pts["RTAC822_ACTIVE_DIAG"] == 0, "restart delay"
+    for i in range(25 + restart - 1, 25 + restart + 60):
+        st, pts = step_822(st, i)
+    assert not st["chiller"]["tripped"] and pts["RTAC822_PCT_CAPACITY"] > 0.0
+    assert st["chiller"]["resets"] == 2
 
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0

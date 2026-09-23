@@ -6317,7 +6317,7 @@
     "type": "MV",
     "units": "state",
     "normal_min": 0,
-    "normal_max": 3,
+    "normal_max": 4,
     "writable": false,
     "critical": true,
     "trend_interval_sec": 300,
@@ -6326,7 +6326,8 @@
       "None",
       "LowEvapTemp",
       "CondFanFail",
-      "CircuitLockout"
+      "CircuitLockout",
+      "LowEvapFlow"
     ]
   }
 ]

@@ -157,8 +157,8 @@ def build_points():
         _pt("RTAC822_CKT2_STATUS",   rt, "BI", "bool",   1,  1,  False, False, 300),
         _pt("RTAC822_CKT1_FAN_STATUS", rt, "BI", "bool", 1,  1,  False, False, 300),
         _pt("RTAC822_CKT2_FAN_STATUS", rt, "BI", "bool", 1,  1,  False, False, 300),
-        _pt("RTAC822_ACTIVE_DIAG",   rt, "MV", "state",  0,  3,  False, True,  300,
-            states=("None", "LowEvapTemp", "CondFanFail", "CircuitLockout")),
+        _pt("RTAC822_ACTIVE_DIAG",   rt, "MV", "state",  0,  4,  False, True,  300,
+            states=("None", "LowEvapTemp", "CondFanFail", "CircuitLockout", "LowEvapFlow")),
     ]
     return pts
 
@@ -347,6 +347,16 @@ def self_test() -> int:
     names = [p["point"] for p in pts]
     assert len(names) == len(set(names)), "duplicate point names"
     assert all(p["facility"] == FACILITY for p in pts)
+    # The diagnostic's state list must match the model's, and the shipped inventory.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "simulator"))
+    import model822  # noqa: E402
+    diag = [p for p in pts if p["point"] == "RTAC822_ACTIVE_DIAG"][0]
+    assert tuple(diag["states"]) == model822.DIAG_STATES, diag["states"]
+    shipped = json.loads((Path(__file__).resolve().parents[1] / "data" / "input" / "points.json")
+                         .read_text(encoding="utf-8"))
+    shipped_diag = [p for p in shipped if p["point"] == "RTAC822_ACTIVE_DIAG"][0]
+    assert shipped_diag["states"] == list(model822.DIAG_STATES), shipped_diag["states"]
+    assert shipped_diag["normal_max"] == len(model822.DIAG_STATES) - 1
 
     eq = build_equipment()
     assert len([e for e in eq if e["type"] == "Makeup Air Unit"]) == 13
