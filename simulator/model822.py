@@ -73,6 +73,7 @@ TUNING: dict[str, float] = {
     "PUMP_FLA_AMPS": 12.0,            # nameplate full-load amps, each CHW pump
     "PUMP_DRY_AMPS_FRAC": 0.45,       # an air-bound or dead-headed pump unloads to this fraction
     "LOOP_VOLUME_GAL": 400.0,         # building loop water volume
+    "WATER_LB_PER_GAL": 8.34,         # water density, for loop heat capacity
     "LOOP_TAU_MIN": 8.0,              # loop supply lag behind chiller leaving water
     "LOOP_STANDBY_GAIN_F_PER_MIN": 0.05,  # pipe/mechanical-room heat gain with the chiller not producing
     "LOOP_MAX_F": 78.0,               # a stalled loop warms toward the building, not past it
@@ -296,7 +297,7 @@ def loop_supply_temp(current_f: float, chiller_lwt_f: float, producing: bool,
     if producing:
         alpha = 1.0 - math.exp(-STEP_MINUTES / TUNING["LOOP_TAU_MIN"])
         return current_f + (chiller_lwt_f - current_f) * alpha
-    rise = (total_btuh / 60.0 * STEP_MINUTES / (TUNING["LOOP_VOLUME_GAL"] * 8.34)
+    rise = (total_btuh / 60.0 * STEP_MINUTES / (TUNING["LOOP_VOLUME_GAL"] * TUNING["WATER_LB_PER_GAL"])
             + TUNING["LOOP_STANDBY_GAIN_F_PER_MIN"] * STEP_MINUTES)
     return min(TUNING["LOOP_MAX_F"], current_f + rise)
 
