@@ -202,13 +202,17 @@ def loop_hydraulics(chw_state: dict[str, Any], knobs: dict[str, Any] | None = No
 
     leak = 0.0 if isolated else float(k["p1_tdv_leak_gpm"]) * (max(0.0, psig) / fill) ** 0.5
     makeup = 0.0
-    if k["makeup_valve_open"] and psig < fill:
-        makeup = min(TUNING["MAKEUP_GPM"], (fill - psig) / per_gal / STEP_MINUTES + leak)
-    psig = max(0.0, min(fill, psig + (makeup - leak) * STEP_MINUTES * per_gal))
-
-    # When makeup is applied, recalculate leak based on the updated psig so it reflects the final pressure
-    if k["makeup_valve_open"] and makeup > 0.0:
-        leak = 0.0 if isolated else float(k["p1_tdv_leak_gpm"]) * (max(0.0, psig) / fill) ** 0.5
+    if k["makeup_valve_open"]:
+        # The PRV holds its setting continuously: it refills up to fill and,
+        # once there, replaces exactly what leaks (limited by valve capacity).
+        makeup = min(TUNING["MAKEUP_GPM"], max(0.0, (fill - psig) / per_gal / STEP_MINUTES + leak))
+    new_psig = psig + (makeup - leak) * STEP_MINUTES * per_gal
+    if new_psig < 0.0:
+        # The loop can only lose the water it has: cap this step's leak so the
+        # floor water equals the inventory actually lost (mass balance).
+        leak = makeup + psig / (STEP_MINUTES * per_gal)
+        new_psig = 0.0
+    psig = min(fill, new_psig)
 
     p1_on, p2_on = bool(k["p1_running"]), bool(k["p2_running"])
     pumping = (p1_on and not isolated) or p2_on
@@ -825,8 +829,12 @@ def self_test() -> int:
     chw = fresh_chw()
     h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5})
     assert abs(h["leak_gpm"] - 1.5) < 1e-9 and chw["loop_psig"] < fill, h
+    lost_gal = h["leak_gpm"] * STEP_MINUTES   # the first leak step above
     for _ in range(300):
         h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5})
+        lost_gal += h["leak_gpm"] * STEP_MINUTES
+    # Mass balance: water on the floor equals inventory lost, exactly (the clamp at 0 psig too).
+    assert abs(lost_gal - (fill - chw["loop_psig"]) / TUNING["LOOP_PSI_PER_GAL"]) < 1e-9, (lost_gal, chw)
     assert chw["loop_psig"] < TUNING["PUMP_MIN_SUCTION_PSIG"], chw
     # Below minimum suction the pump draws air: flow collapses, the motor unloads,
     # and nothing about the pump's run status changes (that is the lesson).
@@ -837,9 +845,12 @@ def self_test() -> int:
     st = {"chw": chw}
     assert purge_air(st) is False and chw["air_frac"] == 1.0
 
-    # Refill without isolating: the PRV holds pressure, but the leak keeps running.
+    # Refill without isolating: at 0 psig nothing leaks yet, the PRV starts
+    # filling, and the leak resumes as soon as there is pressure behind it.
     h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "makeup_valve_open": True})
-    assert h["makeup_gpm"] > 0.0 and h["leak_gpm"] > 0.0, h
+    assert h["makeup_gpm"] > 0.0, h
+    h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "makeup_valve_open": True})
+    assert h["leak_gpm"] > 0.0, h
     for _ in range(120):
         h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "makeup_valve_open": True})
     assert abs(chw["loop_psig"] - fill) < 0.01 and h["leak_gpm"] > 1.0, (chw, h)
