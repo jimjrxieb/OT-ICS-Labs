@@ -75,6 +75,16 @@ def validate_page(
     if errors:
         return errors
 
+    # Shape first: restore passes whole pages from backup files, which
+    # never went through request-body typing.
+    for key in ("px_id", "display_name"):
+        if not isinstance(page[key], str):
+            errors.append(f"{key} must be a string")
+    if not isinstance(page["widgets"], list) or not all(isinstance(w, dict) for w in page["widgets"]):
+        errors.append("widgets must be a list of objects")
+    if errors:
+        return errors
+
     if not page["px_id"].strip():
         errors.append("px_id must not be blank")
     elif "/" in page["px_id"] or "\\" in page["px_id"] or ".." in page["px_id"]:
@@ -151,6 +161,18 @@ def self_test() -> int:
         {"px_id": "PAGE/5", "display_name": "Unsafe", "widgets": []}, existing, valid_points, is_create=True,
     )
     assert any("unsafe characters" in e for e in errs), errs
+
+    # Restore feeds whole pages from backup files straight into this
+    # validator, so malformed shapes must come back as errors, not crashes.
+    base = {"px_id": "P", "display_name": "P", "widgets": []}
+    for label, bad_page, needle in [
+        ("widgets not a list", {**base, "widgets": "oops"}, "widgets must be a list of objects"),
+        ("widget not an object", {**base, "widgets": [42]}, "widgets must be a list of objects"),
+        ("id not a string", {**base, "px_id": 7}, "px_id must be a string"),
+        ("name not a string", {**base, "display_name": ["x"]}, "display_name must be a string"),
+    ]:
+        errs = validate_page(bad_page, [], set(), is_create=True)
+        assert any(needle in e for e in errs), (label, errs)
 
     print("px_pages self-test passed")
     return 0

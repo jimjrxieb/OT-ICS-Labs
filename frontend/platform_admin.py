@@ -22,7 +22,33 @@ INPUT_DIR = ROOT / "data" / "input"
 STATIONS_FILE = INPUT_DIR / "stations.json"
 BACKUP_DIR = ROOT / "data" / "output" / "platform-backups"
 BACKUP_LOG_FILE = ROOT / "data" / "output" / "platform-backup-log.jsonl"
-BACKUP_SOURCES = ["equipment.json", "points.json", "alarm_rules.json", "schedules.json", "wiresheets.json"]
+BACKUP_SOURCES = [
+    "equipment.json", "points.json", "alarm_rules.json", "schedules.json", "wiresheets.json", "px_pages.json",
+]
+
+
+class BackupError(ValueError):
+    """A backup that can't be trusted as a restore source."""
+
+
+def _new_dist_dir(prefix: str) -> Path:
+    """Create a fresh .dist directory; never reuse one.
+
+    Names are second-resolution timestamps, so two snapshots in the same
+    second would otherwise share (and overwrite) one directory while the
+    log recorded two backups. A collision gets a -2, -3, ... suffix.
+    """
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        suffix = "" if n == 1 else f"-{n}"
+        dist_dir = BACKUP_DIR / f"{prefix}-{ts}{suffix}.dist"
+        try:
+            dist_dir.mkdir()
+            return dist_dir
+        except FileExistsError:
+            n += 1
 
 
 def load_stations() -> list[dict[str, Any]]:
@@ -62,9 +88,7 @@ def snapshot_single_file(kind: str, entity_id: str, filename: str, operator_id: 
         if "/" in value or "\\" in value or ".." in value:
             raise ValueError(f"unsafe {label} for backup snapshot: {value!r}")
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    dist_dir = BACKUP_DIR / f"{kind}-{entity_id}-{ts}.dist"
-    dist_dir.mkdir(parents=True, exist_ok=True)
+    dist_dir = _new_dist_dir(f"{kind}-{entity_id}")
     src = INPUT_DIR / filename
     copied = []
     if src.exists():
@@ -88,9 +112,7 @@ def snapshot_single_file(kind: str, entity_id: str, filename: str, operator_id: 
 
 def take_backup(station_id: str, operator_id: str) -> dict[str, Any]:
     """Snapshot data/input/ into a timestamped .dist-style directory."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    dist_dir = BACKUP_DIR / f"{station_id}-{ts}.dist"
-    dist_dir.mkdir(parents=True, exist_ok=True)
+    dist_dir = _new_dist_dir(station_id)
     copied = []
     for name in BACKUP_SOURCES:
         src = INPUT_DIR / name
@@ -111,6 +133,46 @@ def take_backup(station_id: str, operator_id: str) -> dict[str, Any]:
     with BACKUP_LOG_FILE.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, sort_keys=True) + "\n")
     return entry
+
+
+def read_backup_file(backup_dir: str, filename: str) -> list[Any]:
+    """Load one JSON store from a recorded backup, or raise BackupError.
+
+    Only directories the backup log recorded are readable, and they must
+    resolve inside BACKUP_DIR -- a restore request can't be pointed at an
+    arbitrary path. Nothing is written here; callers validate the content
+    before changing any state.
+    """
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        raise BackupError(f"unsafe backup filename {filename!r}")
+    if backup_dir not in {e["backup_dir"] for e in load_backup_log()}:
+        raise BackupError(f"{backup_dir!r} is not a recorded backup")
+    dist_dir = (ROOT / backup_dir).resolve()
+    if dist_dir.parent != BACKUP_DIR.resolve():
+        raise BackupError(f"{backup_dir!r} is not a recorded backup")
+    path = dist_dir / filename
+    if not path.is_file():
+        raise BackupError(f"backup {backup_dir!r} does not contain {filename}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise BackupError(f"{filename} in backup {backup_dir!r} is not valid JSON: {exc}") from exc
+    if not isinstance(data, list):
+        raise BackupError(f"{filename} in backup {backup_dir!r} must contain a JSON list")
+    return data
+
+
+def backups_containing(filename: str) -> list[dict[str, Any]]:
+    """Recorded backups that still hold `filename` on disk, newest first.
+
+    One row per directory (older log rows may share a directory from before
+    _new_dist_dir(); the latest entry wins).
+    """
+    by_dir: dict[str, dict[str, Any]] = {}
+    for entry in load_backup_log():
+        if filename in entry.get("files", []) and (ROOT / entry["backup_dir"] / filename).is_file():
+            by_dir[entry["backup_dir"]] = entry
+    return sorted(by_dir.values(), key=lambda e: e["timestamp"], reverse=True)
 
 
 def self_test() -> int:
@@ -143,6 +205,45 @@ def self_test() -> int:
         assert False, "expected ValueError for entity_id containing a slash"
     except ValueError:
         pass
+
+    # Regression: snapshots taken within the same second used to share one
+    # .dist directory, so later copies overwrote earlier ones while the log
+    # still listed each as a separate backup.
+    first = snapshot_single_file("platform-selftest", "SAMESEC", "schedules.json", "self-test")
+    second = snapshot_single_file("platform-selftest", "SAMESEC", "schedules.json", "self-test")
+    assert first["backup_dir"] != second["backup_dir"], (first, second)
+    assert (ROOT / first["backup_dir"] / "schedules.json").exists()
+
+    # Px pages are station configuration too; a Platform backup must cover them.
+    assert "px_pages.json" in BACKUP_SOURCES, BACKUP_SOURCES
+
+    # read_backup_file: the one gate every restore goes through.
+    data = read_backup_file(first["backup_dir"], "schedules.json")
+    assert isinstance(data, list), data
+
+    def expect_backup_error(backup_dir: str, filename: str, needle: str) -> None:
+        try:
+            read_backup_file(backup_dir, filename)
+        except BackupError as exc:
+            assert needle in str(exc), (needle, str(exc))
+            return
+        raise AssertionError(f"expected BackupError containing {needle!r}")
+
+    expect_backup_error("data/output/platform-backups/never-logged.dist", "schedules.json", "not a recorded backup")
+    expect_backup_error("data/input", "schedules.json", "not a recorded backup")
+    expect_backup_error(first["backup_dir"], "wiresheets.json", "does not contain wiresheets.json")
+    expect_backup_error(first["backup_dir"], "../../input/schedules.json", "unsafe backup filename")
+
+    corrupt = snapshot_single_file("platform-selftest", "CORRUPT", "schedules.json", "self-test")
+    (ROOT / corrupt["backup_dir"] / "schedules.json").write_text("{not json", encoding="utf-8")
+    expect_backup_error(corrupt["backup_dir"], "schedules.json", "is not valid JSON")
+    (ROOT / corrupt["backup_dir"] / "schedules.json").write_text('{"a": 1}', encoding="utf-8")
+    expect_backup_error(corrupt["backup_dir"], "schedules.json", "must contain a JSON list")
+
+    listed = backups_containing("schedules.json")
+    dirs = [b["backup_dir"] for b in listed]
+    assert len(dirs) == len(set(dirs)), "backups_containing must list each directory once"
+    assert dirs[0] == corrupt["backup_dir"], "backups_containing must list newest first"
 
     print("platform_admin self-test passed")
     return 0

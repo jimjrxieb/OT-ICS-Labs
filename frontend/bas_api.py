@@ -512,6 +512,96 @@ def _wiresheet_reference_inventory() -> dict[str, set[str]]:
     }
 
 
+def _entity_from_backup(backup_dir: str, filename: str, id_key: str, entity_id: str) -> dict[str, Any]:
+    """The one Wire Sheet / Px page with `entity_id` inside a recorded backup.
+
+    Raises BackupError for anything that makes the backup unusable as a
+    restore source. Reads only; nothing is written.
+    """
+    records = platform_admin.read_backup_file(backup_dir, filename)
+    matches = [r for r in records if isinstance(r, dict) and r.get(id_key) == entity_id]
+    if not matches:
+        raise platform_admin.BackupError(f"backup {backup_dir!r} does not contain {id_key} {entity_id!r}")
+    if len(matches) > 1:
+        raise platform_admin.BackupError(f"backup {backup_dir!r} contains {id_key} {entity_id!r} more than once")
+    return matches[0]
+
+
+def _backup_rows(filename: str, id_key: str, entity_id: str) -> list[dict[str, Any]]:
+    """Backups holding `filename` that contain this entity, newest first."""
+    rows = []
+    for entry in platform_admin.backups_containing(filename):
+        try:
+            _entity_from_backup(entry["backup_dir"], filename, id_key, entity_id)
+        except platform_admin.BackupError:
+            continue
+        rows.append({
+            "backup_dir": entry["backup_dir"],
+            "timestamp": entry["timestamp"],
+            "kind": entry.get("kind"),
+            "operator_id": entry.get("operator_id"),
+        })
+    return rows
+
+
+def _restore_entity(
+    *,
+    noun: str,
+    action_prefix: str,
+    id_key: str,
+    entity_id: str,
+    filename: str,
+    backup_dir: str,
+    role: str,
+    operator_id: str,
+    load: Any,
+    save: Any,
+    validate: Any,
+) -> dict[str, Any]:
+    """Restore one Wire Sheet / Px page from a recorded backup.
+
+    Order matters: authorize, then validate the backup completely, then
+    snapshot the current store, then write, then audit. Any failure before
+    the snapshot leaves the store untouched.
+    """
+    _require_command_role(role)
+    current = load()
+    if not any(r[id_key] == entity_id for r in current):
+        raise HTTPException(status_code=404, detail=f"{noun} {entity_id!r} not found")
+
+    try:
+        restored = _entity_from_backup(backup_dir, filename, id_key, entity_id)
+    except platform_admin.BackupError as exc:
+        errors = [str(exc)]
+    else:
+        others = [r for r in current if r[id_key] != entity_id]
+        errors = validate(restored, others)
+    if errors:
+        _append_operator_action({
+            "action": f"{action_prefix}_restore_rejected",
+            id_key: entity_id,
+            "role": role,
+            "operator_id": operator_id,
+            "restored_from": backup_dir,
+            "errors": errors,
+        })
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    pre_restore = platform_admin.snapshot_single_file(
+        f"{action_prefix.replace('_', '-')}-restore", entity_id, filename, operator_id
+    )
+    save([restored if r[id_key] == entity_id else r for r in current])
+    _append_operator_action({
+        "action": f"{action_prefix}_restored",
+        id_key: entity_id,
+        "role": role,
+        "operator_id": operator_id,
+        "restored_from": backup_dir,
+        "pre_restore_backup": pre_restore["backup_dir"],
+    })
+    return {"restored": restored, "restored_from": backup_dir, "pre_restore_backup": pre_restore["backup_dir"]}
+
+
 @app.post("/api/wiresheets")
 def create_wiresheet(
     wiresheet_id: str,
@@ -599,6 +689,32 @@ def backup_wiresheet(
         "backup_dir": entry["backup_dir"],
     })
     return entry
+
+
+@app.get("/api/wiresheets/{wiresheet_id}/backups")
+def get_wiresheet_backups(wiresheet_id: str) -> dict[str, Any]:
+    """Backups this Wire Sheet can be restored from, newest first."""
+    if wiresheets.find_wiresheet(wiresheet_id) is None:
+        raise HTTPException(status_code=404, detail=f"Wire Sheet {wiresheet_id!r} not found")
+    return {"backups": _backup_rows("wiresheets.json", "wiresheet_id", wiresheet_id)}
+
+
+@app.post("/api/wiresheets/{wiresheet_id}/restore")
+def restore_wiresheet(
+    wiresheet_id: str,
+    backup_dir: str,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Replace this one Wire Sheet with its copy from a backup; other sheets are untouched."""
+    return _restore_entity(
+        noun="Wire Sheet", action_prefix="wiresheet", id_key="wiresheet_id", entity_id=wiresheet_id,
+        filename="wiresheets.json", backup_dir=backup_dir, role=role, operator_id=operator_id,
+        load=wiresheets.load_wiresheets, save=wiresheets.save_wiresheets,
+        validate=lambda ws, others: wiresheets.validate_wiresheet(
+            ws, others, is_create=True, **_wiresheet_reference_inventory()
+        ),
+    )
 
 
 @app.get("/api/px")
@@ -733,6 +849,31 @@ def backup_px_page(
         "backup_dir": entry["backup_dir"],
     })
     return entry
+
+
+@app.get("/api/px/{px_id}/backups")
+def get_px_backups(px_id: str) -> dict[str, Any]:
+    """Backups this Px page can be restored from, newest first."""
+    if px_pages.find_px_page(px_id) is None:
+        raise HTTPException(status_code=404, detail=f"Px page {px_id!r} not found")
+    return {"backups": _backup_rows("px_pages.json", "px_id", px_id)}
+
+
+@app.post("/api/px/{px_id}/restore")
+def restore_px_page(
+    px_id: str,
+    backup_dir: str,
+    role: str = Query(...),
+    operator_id: str = Query("eng-workbench"),
+) -> dict[str, Any]:
+    """Replace this one Px page with its copy from a backup; other pages are untouched."""
+    valid_points = {pt["point"] for pt in _load_input_points()}
+    return _restore_entity(
+        noun="Px page", action_prefix="px_page", id_key="px_id", entity_id=px_id,
+        filename="px_pages.json", backup_dir=backup_dir, role=role, operator_id=operator_id,
+        load=px_pages.load_px_pages, save=px_pages.save_px_pages,
+        validate=lambda page, others: px_pages.validate_page(page, others, valid_points, is_create=True),
+    )
 
 
 @app.get("/api/roles")

@@ -329,6 +329,17 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
           <button onclick="addWireSheetLink()">Add Link</button>
         </div>
         <div id="ws-save-status" style="font-size:0.78rem;"></div>
+
+        <div class="section-title">Backup &amp; Restore</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <button onclick="takeEditorBackup('ws')">Take Backup</button>
+          <select id="ws-backup-select" style="min-width:340px;"></select>
+          <button onclick="restoreEditorBackup('ws')">Restore Selected</button>
+        </div>
+        <div id="ws-restore-status" style="font-size:0.78rem;"></div>
+        <p class="tech-note">Restore replaces only this Wire Sheet with its copy from the selected
+          backup. The backup is validated first, and the current version is backed up before
+          anything changes.</p>
       </div>
 
       <!-- PLATFORM -->
@@ -401,6 +412,17 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
           <button onclick="addPxWidget()">Add Widget</button>
         </div>
         <div id="px-save-status" style="font-size:0.78rem;"></div>
+
+        <div class="section-title">Backup &amp; Restore</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <button onclick="takeEditorBackup('px')">Take Backup</button>
+          <select id="px-backup-select" style="min-width:340px;"></select>
+          <button onclick="restoreEditorBackup('px')">Restore Selected</button>
+        </div>
+        <div id="px-restore-status" style="font-size:0.78rem;"></div>
+        <p class="tech-note">Restore replaces only this Px page with its copy from the selected
+          backup. The backup is validated first, and the current version is backed up before
+          anything changes.</p>
       </div>
 
       <!-- TROUBLE CALL -->
@@ -858,6 +880,7 @@ async function loadWireSheet(id) {
     document.getElementById('wiresheet-desc').textContent = ws.description || '';
     document.getElementById('wiresheet-select').value = ws.wiresheet_id;
     canvas.innerHTML = renderWireSheetSvg(ws);
+    await refreshEditorBackups('ws');
   } catch(e) {
     canvas.innerHTML = '<div style="color:#c62828">Error loading Wire Sheet: ' + e + '</div>';
   }
@@ -948,6 +971,73 @@ function apiErrorText(detail) {
   if (typeof detail === 'string') return detail;
   if (detail === undefined || detail === null) return 'request failed';
   return JSON.stringify(detail);
+}
+
+function backupOptionLabel(b) {
+  const when = String(b.timestamp).slice(0, 19).replace('T', ' ') + 'Z';
+  return when + ' · ' + (b.kind || 'backup') + ' · ' + (b.operator_id || 'unknown');
+}
+
+// Backup/restore is identical for Wire Sheets and Px pages apart from these.
+const EDITOR_BACKUP = {
+  ws: {api: '/api/wiresheets/', select: 'wiresheet-select', noun: 'Wire Sheet',
+       reload: async id => { await loadWireSheet(id); await refreshWireSheetLinkSlotOptions(); }},
+  px: {api: '/api/px/', select: 'px-select', noun: 'Px page', reload: id => loadPxPage(id)},
+};
+
+async function refreshEditorBackups(prefix) {
+  const cfg = EDITOR_BACKUP[prefix];
+  const id = document.getElementById(cfg.select).value;
+  const select = document.getElementById(prefix + '-backup-select');
+  if (!id) { select.innerHTML = ''; return; }
+  // Handles its own errors: a failed backup listing must not blank the
+  // canvas of the sheet/page that loaded fine.
+  try {
+    const data = await (await fetch(cfg.api + encodeURIComponent(id) + '/backups')).json();
+    const rows = data.backups || [];
+    select.innerHTML = rows.length
+      ? rows.map(b => '<option value="' + b.backup_dir + '">' + backupOptionLabel(b) + '</option>').join('')
+      : '<option value="">No backups contain this ' + cfg.noun + ' yet</option>';
+  } catch (e) {
+    select.innerHTML = '<option value="">Could not list backups</option>';
+    setRestoreStatus(prefix, 'Could not list backups: ' + e, false);
+  }
+}
+
+function setRestoreStatus(prefix, text, ok) {
+  const status = document.getElementById(prefix + '-restore-status');
+  status.style.color = ok ? '#2e7d32' : '#c62828';
+  status.textContent = text;
+}
+
+async function takeEditorBackup(prefix) {
+  const cfg = EDITOR_BACKUP[prefix];
+  const id = document.getElementById(cfg.select).value;
+  if (!id) { setRestoreStatus(prefix, 'Select a ' + cfg.noun + ' first.', false); return; }
+  const params = new URLSearchParams({role: selectedRole()});
+  const res = await fetch(cfg.api + encodeURIComponent(id) + '/backup?' + params.toString(), {method: 'POST'});
+  const data = await res.json();
+  if (!res.ok) { setRestoreStatus(prefix, apiErrorText(data.detail), false); return; }
+  // Refresh first so the status only appears once the new backup is pickable.
+  await refreshEditorBackups(prefix);
+  setRestoreStatus(prefix, 'Backup taken: ' + data.backup_dir, true);
+}
+
+async function restoreEditorBackup(prefix) {
+  const cfg = EDITOR_BACKUP[prefix];
+  const id = document.getElementById(cfg.select).value;
+  const select = document.getElementById(prefix + '-backup-select');
+  const backupDir = select.value;
+  if (!id || !backupDir) { setRestoreStatus(prefix, 'Select a ' + cfg.noun + ' and a backup first.', false); return; }
+  const label = select.options[select.selectedIndex].textContent;
+  if (!confirm('Restore ' + cfg.noun + ' ' + id + ' from the backup taken ' + label + '?\n\n' +
+               'The current version is backed up first.')) return;
+  const params = new URLSearchParams({backup_dir: backupDir, role: selectedRole()});
+  const res = await fetch(cfg.api + encodeURIComponent(id) + '/restore?' + params.toString(), {method: 'POST'});
+  const data = await res.json();
+  if (!res.ok) { setRestoreStatus(prefix, 'Restore refused: ' + apiErrorText(data.detail), false); return; }
+  await cfg.reload(id);
+  setRestoreStatus(prefix, 'Restored from ' + data.restored_from + '. Previous version saved to ' + data.pre_restore_backup + '.', true);
 }
 
 // Which config input the Add Block form shows for a block type (null: none).
@@ -1277,6 +1367,7 @@ async function loadPxPage(id) {
     const page = await res.json();
     document.getElementById('px-select').value = page.px_id;
     canvas.innerHTML = renderPxSvg(page);
+    await refreshEditorBackups('px');
   } catch(e) {
     canvas.innerHTML = '<div style="color:#c62828">Error loading Px page: ' + e + '</div>';
   }

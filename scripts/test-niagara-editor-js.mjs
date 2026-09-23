@@ -14,7 +14,7 @@ const HTML_PATH = path.join(__dirname, '..', 'frontend', 'static', 'niagara.html
 
 function extractFunction(source, name) {
   // Naive brace counter: no guard against '{'/'}' occurring inside a
-  // string or template literal. Fine for the current 5 target functions
+  // string or template literal. Fine for the current 6 target functions
   // (no such literals in their bodies) -- revisit if reused on functions
   // that contain brace characters inside strings/templates.
   const marker = 'function ' + name + '(';
@@ -43,13 +43,13 @@ if (!scriptMatch) {
 }
 const scriptSource = scriptMatch[1];
 
-const functionNames = ['apiErrorText', 'pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
+const functionNames = ['apiErrorText', 'backupOptionLabel', 'pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
 const extracted = functionNames.map((name) => extractFunction(scriptSource, name)).join('\n\n');
 
 const sandbox = new Function(
-  extracted + '\nreturn {apiErrorText, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
+  extracted + '\nreturn {apiErrorText, backupOptionLabel, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
 );
-const { apiErrorText, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
+const { apiErrorText, backupOptionLabel, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
 
 let failures = 0;
 
@@ -160,6 +160,19 @@ check(
    apiErrorText([{ loc: ['body'], msg: 'field required' }]),
    apiErrorText(undefined)],
   ['a bad; b bad', "Role 'viewer' is not authorized", '[{"loc":["body"],"msg":"field required"}]', 'request failed']
+);
+
+check(
+  'backupOptionLabel shows UTC time, kind, and operator',
+  backupOptionLabel({ backup_dir: 'data/output/platform-backups/x.dist', timestamp: '2026-09-23T16:16:15.787022+00:00',
+                      kind: 'wiresheet-editor', operator_id: 'eng-workbench' }),
+  '2026-09-23 16:16:15Z · wiresheet-editor · eng-workbench'
+);
+
+check(
+  'backupOptionLabel tolerates rows without kind/operator (older platform entries)',
+  backupOptionLabel({ backup_dir: 'd', timestamp: '2026-09-23T01:02:03+00:00' }),
+  '2026-09-23 01:02:03Z · backup · unknown'
 );
 
 if (failures > 0) {

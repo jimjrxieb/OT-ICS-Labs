@@ -297,6 +297,17 @@ def validate_wiresheet(
     if errors:
         return errors
 
+    # Shape first: restore passes whole records from backup files, which
+    # never went through request-body typing.
+    for key in ("wiresheet_id", "display_name"):
+        if not isinstance(ws[key], str):
+            errors.append(f"{key} must be a string")
+    for key in ("blocks", "links"):
+        if not isinstance(ws[key], list) or not all(isinstance(item, dict) for item in ws[key]):
+            errors.append(f"{key} must be a list of objects")
+    if errors:
+        return errors
+
     if not ws["wiresheet_id"].strip():
         errors.append("wiresheet_id must not be blank")
     elif "/" in ws["wiresheet_id"] or "\\" in ws["wiresheet_id"] or ".." in ws["wiresheet_id"]:
@@ -529,6 +540,19 @@ def self_test() -> int:
         [], is_create=True,
     )
     assert any("block_id must be a non-blank string" in e for e in errs), errs
+
+    # Restore feeds whole records from backup files straight into this
+    # validator (no request-body typing), so malformed shapes must come back
+    # as errors, not AttributeError/TypeError.
+    for label, bad_ws, needle in [
+        ("blocks not a list", {**good_ws, "blocks": "oops"}, "blocks must be a list of objects"),
+        ("block not an object", {**good_ws, "blocks": [42]}, "blocks must be a list of objects"),
+        ("links not a list", {**good_ws, "links": {"a": 1}}, "links must be a list of objects"),
+        ("id not a string", {**good_ws, "wiresheet_id": 7}, "wiresheet_id must be a string"),
+        ("name not a string", {**good_ws, "display_name": None}, "display_name must be a string"),
+    ]:
+        errs = validate_wiresheet(bad_ws, [], is_create=True)
+        assert any(needle in e for e in errs), (label, errs)
 
     print("wiresheets self-test passed")
     return 0
