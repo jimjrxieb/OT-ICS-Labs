@@ -14,6 +14,7 @@ without editing physics code.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,10 @@ TUNING: dict[str, float] = {
     "AIR_BIND_PER_MIN": 0.25,         # fraction of flow lost per minute below minimum suction
     "PUMP_FLA_AMPS": 12.0,            # nameplate full-load amps, each CHW pump
     "PUMP_DRY_AMPS_FRAC": 0.45,       # an air-bound or dead-headed pump unloads to this fraction
+    "LOOP_VOLUME_GAL": 400.0,         # building loop water volume
+    "LOOP_TAU_MIN": 8.0,              # loop supply lag behind chiller leaving water
+    "LOOP_STANDBY_GAIN_F_PER_MIN": 0.05,  # pipe/mechanical-room heat gain with the chiller not producing
+    "LOOP_MAX_F": 78.0,               # a stalled loop warms toward the building, not past it
 }
 
 DEFAULT_WEATHER = (78.0, 60.0)
@@ -279,6 +284,21 @@ def chw_loop(entering_f: float, total_btuh: float, flow_frac: float,
         "strainer_dp_psid": round(strainer_dp, 2),
         "bldg_dp_psid": round(bldg_dp, 2),
     }
+
+
+def loop_supply_temp(current_f: float, chiller_lwt_f: float, producing: bool,
+                     total_btuh: float) -> float:
+    """Loop supply temperature after one step.
+
+    Producing: first-order lag toward the chiller's leaving water. Not
+    producing: the loop absorbs the coil load plus standby heat gain.
+    """
+    if producing:
+        alpha = 1.0 - math.exp(-STEP_MINUTES / TUNING["LOOP_TAU_MIN"])
+        return current_f + (chiller_lwt_f - current_f) * alpha
+    rise = (total_btuh / 60.0 * STEP_MINUTES / (TUNING["LOOP_VOLUME_GAL"] * 8.34)
+            + TUNING["LOOP_STANDBY_GAIN_F_PER_MIN"] * STEP_MINUTES)
+    return min(TUNING["LOOP_MAX_F"], current_f + rise)
 
 
 # --- cooling coil -----------------------------------------------------------
@@ -686,8 +706,8 @@ def step_822(state: dict[str, Any], step: int, profile: str = "design_summer",
     # --- plant and service entrance ----------------------------------------
     load_tons = total_btuh / 12000.0 + TUNING["CAMPUS_BASE_TONS"]
     ch = chiller_step(load_tons, oa_t, _knobs_for(knobs, "CHILLER-RTAC-822"))
-    state["chw"]["entering_f"] = ch["lwt_f"]
-    loop = chw_loop(ch["lwt_f"], total_btuh, flow_frac, chw_knobs)
+    state["chw"]["entering_f"] = loop_supply_temp(entering_f, ch["lwt_f"], True, total_btuh)
+    loop = chw_loop(state["chw"]["entering_f"], total_btuh, flow_frac, chw_knobs)
     loop.update({key: hyd[key] for key in (
         "leak_gpm", "makeup_gpm", "loop_psig", "air_frac",
         "p1_amps", "p2_amps", "p1_deadhead", "p1_tdv_failed")})
@@ -877,6 +897,24 @@ def self_test() -> int:
     old.pop("plant_room", None)
     step_822(old, 0)
     assert old["chw"]["loop_psig"] == fill and old["plant_room"]["water_gal"] == 0.0
+
+    # --- S-001 loop thermal mass ----------------------------------------------
+    sp = TUNING["CHW_SETPOINT_F"]
+    assert loop_supply_temp(sp, sp, True, 200000.0) == sp, "healthy loop holds setpoint exactly"
+    t = loop_supply_temp(sp + 10.0, sp, True, 0.0)
+    assert sp < t < sp + 10.0, "producing chiller pulls the loop down gradually, not instantly"
+    idle = loop_supply_temp(sp, sp, False, 0.0)
+    assert idle > sp, "with the chiller not producing, the loop picks up standby heat"
+    assert loop_supply_temp(TUNING["LOOP_MAX_F"], sp, False, 10_000_000.0) == TUNING["LOOP_MAX_F"]
+
+    # Regression guard: an overloaded chiller must settle, not alternate step to
+    # step (before loop thermal mass, condenser fouling flipped CHW supply 49 <-> 64 F).
+    st = cold_start_state()
+    sup = []
+    for i in range(120):
+        st, p = step_822(st, i, knobs={"CHILLER-RTAC-822": {"condenser_fouling": 0.5}})
+        sup.append(p["CHW822_ENT_SUP_TEMP"])
+    assert max(abs(a - b) for a, b in zip(sup[-10:], sup[-11:-1])) < 0.5, sup[-11:]
 
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0

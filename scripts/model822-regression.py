@@ -37,6 +37,11 @@ CASES: dict[str, dict[str, Any]] = {
 }
 
 # Intended, documented drift per case (max absolute difference on any point).
+# condenser_fouling_0_5 was re-recorded in S-001 phase 1 task 3: before loop
+# thermal mass, that case's CHW supply alternated ~49 <-> 64 F every step (the
+# instant loop fed an overloaded chiller's output straight back into coil
+# load), so its baseline captured one half of an oscillation. The lagged loop
+# settles it; the re-recorded values are the settled state.
 TOLERANCE: dict[str, float] = {}
 
 
