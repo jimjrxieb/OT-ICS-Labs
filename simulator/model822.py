@@ -63,6 +63,14 @@ TUNING: dict[str, float] = {
     "HALL_INFIL_CFM": 25.0,
     "HALL_SUPPLY_FRACTION": 0.30,
     "AIR_LB_PER_CF": 0.075,
+    # --- S-001 CHW hydronics: synthetic engineering assumptions, not field data --
+    "LOOP_FILL_PSIG": 15.0,           # cold static fill pressure at the pump suction
+    "LOOP_PSI_PER_GAL": 0.1,          # pressure lost per gallon removed (expansion-tank stiffness)
+    "MAKEUP_GPM": 3.0,                # fill valve capacity through the PRV
+    "PUMP_MIN_SUCTION_PSIG": 4.0,     # below this the pump starts drawing air
+    "AIR_BIND_PER_MIN": 0.25,         # fraction of flow lost per minute below minimum suction
+    "PUMP_FLA_AMPS": 12.0,            # nameplate full-load amps, each CHW pump
+    "PUMP_DRY_AMPS_FRAC": 0.45,       # an air-bound or dead-headed pump unloads to this fraction
 }
 
 DEFAULT_WEATHER = (78.0, 60.0)
@@ -163,20 +171,92 @@ CHW_KNOB_DEFAULTS: dict[str, Any] = {
     "strainer_resistance": 0.0,   # 0..1, fraction of flow lost
     "p1_running": True,
     "p2_running": False,
+    "p1_tdv_leak_gpm": 0.0,       # S-001 cause: P1 branch triple-duty valve body leak rate at fill pressure
+    "p1_branch_isolated": False,  # P1 suction + discharge isolation valves closed
+    "makeup_valve_open": False,   # fill/makeup isolated -- S-001 synthetic assumption
 }
 
 
-def chw_loop(entering_f: float, total_btuh: float,
+def _ensure_plant_state(state: dict[str, Any]) -> None:
+    """Add hydronic fields to a state saved before they existed (defensive,
+    like ground_truth_snapshot's physical_valve_pct fallback). Healthy values."""
+    chw = state.setdefault("chw", {"entering_f": TUNING["CHW_SETPOINT_F"]})
+    chw.setdefault("loop_psig", TUNING["LOOP_FILL_PSIG"])
+    chw.setdefault("air_frac", 0.0)
+    state.setdefault("plant_room", {"water_gal": 0.0})
+
+
+def loop_hydraulics(chw_state: dict[str, Any], knobs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One step of loop water inventory, static pressure, and pump air-binding.
+
+    Mutates chw_state["loop_psig"] and chw_state["air_frac"]. A leak removes
+    water (orifice flow ~ sqrt of pressure); an open makeup valve refills
+    through the PRV but never past fill pressure. Below minimum suction the
+    running pump draws air; air stays until purged, even after refill.
+    """
+    k = {**CHW_KNOB_DEFAULTS, **(knobs or {})}
+    fill = TUNING["LOOP_FILL_PSIG"]
+    per_gal = TUNING["LOOP_PSI_PER_GAL"]
+    psig = float(chw_state["loop_psig"])
+    isolated = bool(k["p1_branch_isolated"])
+
+    leak = 0.0 if isolated else float(k["p1_tdv_leak_gpm"]) * (max(0.0, psig) / fill) ** 0.5
+    makeup = 0.0
+    if k["makeup_valve_open"] and psig < fill:
+        makeup = min(TUNING["MAKEUP_GPM"], (fill - psig) / per_gal / STEP_MINUTES + leak)
+    psig = max(0.0, min(fill, psig + (makeup - leak) * STEP_MINUTES * per_gal))
+
+    # When makeup is applied, recalculate leak based on the updated psig so it reflects the final pressure
+    if k["makeup_valve_open"] and makeup > 0.0:
+        leak = 0.0 if isolated else float(k["p1_tdv_leak_gpm"]) * (max(0.0, psig) / fill) ** 0.5
+
+    p1_on, p2_on = bool(k["p1_running"]), bool(k["p2_running"])
+    pumping = (p1_on and not isolated) or p2_on
+    air = float(chw_state["air_frac"])
+    if pumping and psig < TUNING["PUMP_MIN_SUCTION_PSIG"]:
+        air = min(1.0, air + TUNING["AIR_BIND_PER_MIN"] * STEP_MINUTES)
+    chw_state["loop_psig"] = psig
+    chw_state["air_frac"] = air
+
+    flow = (1.0 - float(k["strainer_resistance"])) * (1.0 - air) if pumping else 0.0
+    flow = max(0.0, min(1.0, flow))
+
+    fla, dry = TUNING["PUMP_FLA_AMPS"], TUNING["PUMP_DRY_AMPS_FRAC"]
+    # Air unloads the impeller: full-load amps with no air, down to dry-running amps.
+    # Written so air_frac == 0 gives exactly `fla` (self-tests compare exactly).
+    loaded = fla * (1.0 - (1.0 - dry) * air)
+    return {
+        "flow_frac": flow,
+        "leak_gpm": leak,
+        "makeup_gpm": makeup,
+        "loop_psig": psig,
+        "air_frac": air,
+        "p1_amps": 0.0 if not p1_on else (fla * dry if isolated else loaded),
+        "p2_amps": loaded if p2_on else 0.0,
+        "p1_deadhead": p1_on and isolated,
+        "p1_tdv_failed": float(k["p1_tdv_leak_gpm"]) > 0.0,
+    }
+
+
+def purge_air(state: dict[str, Any]) -> bool:
+    """High-point vent. Removes entrained air, but only with enough pressure
+    to push it out; an empty loop just draws more air in."""
+    _ensure_plant_state(state)
+    if state["chw"]["loop_psig"] < TUNING["PUMP_MIN_SUCTION_PSIG"]:
+        return False
+    state["chw"]["air_frac"] = 0.0
+    return True
+
+
+def chw_loop(entering_f: float, total_btuh: float, flow_frac: float,
              knobs: dict[str, Any] | None = None) -> dict[str, Any]:
     """Three-way valves at the coils, so building flow is roughly constant and
-    the valves modulate mixing.
+    the valves modulate mixing. Flow now comes from loop_hydraulics().
 
     That distinction matters diagnostically: a failed three-way gives you full
     flow and no cooling, which must not look like no flow at all.
     """
     k = {**CHW_KNOB_DEFAULTS, **(knobs or {})}
-    pumping = bool(k["p1_running"]) or bool(k["p2_running"])
-    flow_frac = (1.0 - float(k["strainer_resistance"])) if pumping else 0.0
     flow_frac = max(0.0, min(1.0, flow_frac))
     gpm = TUNING["CHW_GPM_DESIGN"] * flow_frac
 
@@ -366,7 +446,9 @@ def cold_start_state() -> dict[str, Any]:
                     "space_sp_f": 73.0, "fan_mode": 1}
                 for f in FCU_IDS},
         "hall": {h: {"t_f": 75.0, "w": ps.humidity_ratio(75.0, 60.0)} for h in HALL_IDS},
-        "chw": {"entering_f": TUNING["CHW_SETPOINT_F"]},
+        "chw": {"entering_f": TUNING["CHW_SETPOINT_F"],
+                "loop_psig": TUNING["LOOP_FILL_PSIG"], "air_frac": 0.0},
+        "plant_room": {"water_gal": 0.0},
     }
 
 
@@ -444,10 +526,11 @@ def step_822(state: dict[str, Any], step: int, profile: str = "design_summer",
         entry = overrides.get(name)
         return float(entry["value"]) if entry else fallback
 
+    _ensure_plant_state(state)
     chw_knobs = _knobs_for(knobs, "CHW-822")
-    flow_frac = 0.0 if not (chw_knobs.get("p1_running", True)
-                            or chw_knobs.get("p2_running", False)) else \
-        max(0.0, 1.0 - float(chw_knobs.get("strainer_resistance", 0.0)))
+    hyd = loop_hydraulics(state["chw"], chw_knobs)
+    flow_frac = hyd["flow_frac"]
+    state["plant_room"]["water_gal"] += hyd["leak_gpm"] * STEP_MINUTES
     entering_f = float(state["chw"]["entering_f"])
 
     # --- MAUs ---------------------------------------------------------------
@@ -600,7 +683,10 @@ def step_822(state: dict[str, Any], step: int, profile: str = "design_summer",
     load_tons = total_btuh / 12000.0 + TUNING["CAMPUS_BASE_TONS"]
     ch = chiller_step(load_tons, oa_t, _knobs_for(knobs, "CHILLER-RTAC-822"))
     state["chw"]["entering_f"] = ch["lwt_f"]
-    loop = chw_loop(ch["lwt_f"], total_btuh, chw_knobs)
+    loop = chw_loop(ch["lwt_f"], total_btuh, flow_frac, chw_knobs)
+    loop.update({key: hyd[key] for key in (
+        "leak_gpm", "makeup_gpm", "loop_psig", "air_frac",
+        "p1_amps", "p2_amps", "p1_deadhead", "p1_tdv_failed")})
 
     pts["CHW822_ENT_SUP_TEMP"] = loop["supply_f"]
     pts["CHW822_ENT_RET_TEMP"] = loop["return_f"]
@@ -724,6 +810,62 @@ def self_test() -> int:
         "once repaired, physical position must track command again"
     assert abs(pts2["MAU04_SAT"] - healthy["MAU04_SAT"]) < 1.0, \
         f"given enough steps, SAT must fully recover: {pts2['MAU04_SAT']} vs healthy {healthy['MAU04_SAT']}"
+
+    # --- S-001 loop hydraulics ----------------------------------------------
+    fill = TUNING["LOOP_FILL_PSIG"]
+
+    def fresh_chw() -> dict[str, Any]:
+        return {"entering_f": TUNING["CHW_SETPOINT_F"], "loop_psig": fill, "air_frac": 0.0}
+
+    chw = fresh_chw()
+    h = loop_hydraulics(chw, {})
+    assert h["flow_frac"] == 1.0 and h["leak_gpm"] == 0.0 and chw["loop_psig"] == fill, h
+
+    # A leak bleeds pressure down; with fill isolated nothing replaces it.
+    chw = fresh_chw()
+    h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5})
+    assert abs(h["leak_gpm"] - 1.5) < 1e-9 and chw["loop_psig"] < fill, h
+    for _ in range(300):
+        h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5})
+    assert chw["loop_psig"] < TUNING["PUMP_MIN_SUCTION_PSIG"], chw
+    # Below minimum suction the pump draws air: flow collapses, the motor unloads,
+    # and nothing about the pump's run status changes (that is the lesson).
+    assert chw["air_frac"] == 1.0 and h["flow_frac"] == 0.0, h
+    assert 0.0 < h["p1_amps"] < TUNING["PUMP_FLA_AMPS"] * 0.5, h
+
+    # You cannot purge air out of a loop with no pressure behind it.
+    st = {"chw": chw}
+    assert purge_air(st) is False and chw["air_frac"] == 1.0
+
+    # Refill without isolating: the PRV holds pressure, but the leak keeps running.
+    h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "makeup_valve_open": True})
+    assert h["makeup_gpm"] > 0.0 and h["leak_gpm"] > 0.0, h
+    for _ in range(120):
+        h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "makeup_valve_open": True})
+    assert abs(chw["loop_psig"] - fill) < 0.01 and h["leak_gpm"] > 1.0, (chw, h)
+    # Refill does not remove air; a purge does, now that there is pressure.
+    assert h["flow_frac"] == 0.0 and purge_air(st) is True and chw["air_frac"] == 0.0
+    # Close the fill again and the loop bleeds down again.
+    for _ in range(30):
+        h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5})
+    assert chw["loop_psig"] < fill - 1.0, chw
+
+    # Isolating the P1 branch stops the leak; a running P1 behind closed
+    # valves is dead-headed and moves no water; P2 carries the loop.
+    chw = fresh_chw()
+    h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "p1_branch_isolated": True})
+    assert h["leak_gpm"] == 0.0 and h["p1_deadhead"] is True and h["flow_frac"] == 0.0, h
+    assert h["p1_tdv_failed"] is True, "isolation stops the leak, it does not repair the valve"
+    h = loop_hydraulics(chw, {"p1_tdv_leak_gpm": 1.5, "p1_branch_isolated": True,
+                              "p1_running": False, "p2_running": True})
+    assert h["flow_frac"] == 1.0 and h["p1_amps"] == 0.0 and h["p2_amps"] == TUNING["PUMP_FLA_AMPS"], h
+
+    # Old state files (no hydronic fields) still step.
+    old = cold_start_state()
+    old["chw"] = {"entering_f": TUNING["CHW_SETPOINT_F"]}
+    old.pop("plant_room", None)
+    step_822(old, 0)
+    assert old["chw"]["loop_psig"] == fill and old["plant_room"]["water_gal"] == 0.0
 
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0
