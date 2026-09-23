@@ -155,20 +155,28 @@ def _resolve_point_value(
     snapshot: dict[str, Any],
     overrides: dict[str, dict[str, Any]],
     now: datetime | None = None,
+    layer: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """A point's effective value plus what's driving it.
 
-    Priority order mirrors Niagara's priority array: an operator override
-    always wins; failing that, a Schedule's linked baseline; failing
-    that, the simulator's computed value.
+    The lab's source-precedence convention (see wiresheets.py; not a full
+    Niagara/BACnet priority array): operator override (8), then a Wire
+    Sheet write (10), then a Schedule's linked baseline (16), then the
+    simulator's computed value. `layer` is _wiresheet_layer()'s result;
+    without it the Wire Sheet level is skipped, which is exactly the
+    "underlying value" a PointRef reads.
     """
     value = snapshot["points"].get(point_name)
     override = overrides.get(point_name)
     driven_by = "computed"
     schedule_id = None
+    write = (layer or {}).get("writes", {}).get(point_name)
     if override:
         value = override["value"]
         driven_by = "override"
+    elif write is not None:
+        value = write["value"]
+        driven_by = "wiresheet"
     else:
         baseline = _schedule_baseline(point_name, now)
         if baseline and baseline["value"] is not None:
@@ -179,9 +187,68 @@ def _resolve_point_value(
         "value": value,
         "driven_by": driven_by,
         "schedule_id": schedule_id,
+        "wiresheet_id": write["wiresheet_id"] if write is not None else None,
+        "wiresheet_fault": (layer or {}).get("faulted_points", {}).get(point_name),
         "overridden": bool(override),
         "operator_note": override.get("reason") if override else None,
     }
+
+
+def _wiresheet_point_meta(input_pts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Points a Wire Sheet may reference: hospital/office only.
+
+    Building 822 is a Trane site with its own front end at /tracer; the
+    Niagara station never reads or writes it (the UI filters it too).
+    """
+    return {pt["point"]: pt for pt in input_pts if pt.get("facility") != "barracks822"}
+
+
+def _wiresheet_context(
+    sheets: list[dict[str, Any]],
+    snapshot: dict[str, Any],
+    overrides: dict[str, dict[str, Any]],
+    now: datetime,
+) -> dict[str, Any]:
+    """Evaluation context from one snapshot: schedule states and the
+    *underlying* point values (no Wire Sheet level -- no cross-sheet chaining)."""
+    schedule_ctx: dict[str, Any] = {}
+    point_ctx: dict[str, Any] = {}
+    for ws in sheets:
+        for schedule_id in wiresheets.referenced_schedule_ids(ws):
+            if schedule_id not in schedule_ctx:
+                schedule = schedules.find_schedule(schedule_id)
+                if schedule is not None:
+                    schedule_ctx[schedule_id] = schedules.effective_output(schedule, now)["value"]
+        for name in wiresheets.referenced_point_names(ws):
+            if name not in point_ctx:
+                point_ctx[name] = _resolve_point_value(name, snapshot, overrides, now)["value"]
+    return {"schedules": schedule_ctx, "points": point_ctx}
+
+
+def _wiresheet_layer(
+    snapshot: dict[str, Any],
+    overrides: dict[str, dict[str, Any]],
+    now: datetime,
+    input_pts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Every sheet's writes and faults, computed once per request."""
+    sheets = wiresheets.load_wiresheets()
+    context = _wiresheet_context(sheets, snapshot, overrides, now)
+    writes, faults = wiresheets.collect_point_writes(sheets, context, _wiresheet_point_meta(input_pts))
+    faulted_points = {
+        point: sheet_id for sheet_id, f in faults.items() for point in f["released_points"]
+    }
+    return {"writes": writes, "faults": faults, "faulted_points": faulted_points, "context": context}
+
+
+def _request_state() -> tuple[dict[str, Any], dict[str, dict[str, Any]], datetime, list[dict[str, Any]], dict[str, Any]]:
+    """One consistent snapshot for a request: points file, overrides, one
+    `now`, the inventory, and the Wire Sheet layer derived from them."""
+    snapshot = _load_points_file()
+    overrides = _load_overrides()
+    now = datetime.now(timezone.utc)
+    input_pts = _load_input_points()
+    return snapshot, overrides, now, input_pts, _wiresheet_layer(snapshot, overrides, now, input_pts)
 
 
 def _require_command_role(role: str) -> None:
@@ -274,17 +341,15 @@ def niagara_redirect() -> HTMLResponse:
 @app.get("/api/points")
 def get_points() -> dict[str, Any]:
     """All current point values organised by equipment."""
-    snapshot = _load_points_file()
-    input_pts = _load_input_points()
+    snapshot, overrides, now, input_pts, layer = _request_state()
     alarms = _load_alarms()
-    overrides = _load_overrides()
     alarmed = {a["point"] for a in alarms}
 
     by_equipment: dict[str, list[dict[str, Any]]] = {}
     for pt in input_pts:
         name = pt["point"]
         equip = pt["equipment"]
-        resolved = _resolve_point_value(name, snapshot, overrides)
+        resolved = _resolve_point_value(name, snapshot, overrides, now, layer)
         entry = {
             "point": name,
             "equipment": equip,
@@ -302,6 +367,8 @@ def get_points() -> dict[str, Any]:
             "states": pt.get("states"),
             "driven_by": resolved["driven_by"],
             "schedule_id": resolved["schedule_id"],
+            "wiresheet_id": resolved["wiresheet_id"],
+            "wiresheet_fault": resolved["wiresheet_fault"],
         }
         by_equipment.setdefault(equip, []).append(entry)
 
@@ -316,15 +383,13 @@ def get_points() -> dict[str, Any]:
 @app.get("/api/points/{point_name}")
 def get_point(point_name: str) -> dict[str, Any]:
     """Single point value with full metadata."""
-    snapshot = _load_points_file()
-    input_pts = _load_input_points()
+    snapshot, overrides, now, input_pts, layer = _request_state()
     alarms = _load_alarms()
-    overrides = _load_overrides()
     alarmed = {a["point"]: a for a in alarms}
 
     for pt in input_pts:
         if pt["point"] == point_name:
-            resolved = _resolve_point_value(point_name, snapshot, overrides)
+            resolved = _resolve_point_value(point_name, snapshot, overrides, now, layer)
             result = {
                 "point": point_name,
                 "equipment": pt["equipment"],
@@ -342,6 +407,8 @@ def get_point(point_name: str) -> dict[str, Any]:
                 "states": pt.get("states"),
                 "driven_by": resolved["driven_by"],
                 "schedule_id": resolved["schedule_id"],
+                "wiresheet_id": resolved["wiresheet_id"],
+                "wiresheet_fault": resolved["wiresheet_fault"],
             }
             if point_name in alarmed:
                 result["alarm"] = alarmed[point_name]
@@ -414,20 +481,22 @@ def get_schedule(schedule_id: str) -> dict[str, Any]:
     schedule = schedules.find_schedule(schedule_id)
     if schedule is None:
         raise HTTPException(status_code=404, detail=f"Schedule {schedule_id!r} not found")
-    now = datetime.now(timezone.utc)
+    snapshot, overrides, now, _, layer = _request_state()
     resolved = schedules.effective_output(schedule, now)
-    overrides = _load_overrides()
     linked = []
     for link in schedule.get("linked_points", []):
         point_name = link["point"]
-        override = overrides.get(point_name)
+        point_state = _resolve_point_value(point_name, snapshot, overrides, now, layer)
         linked.append({
             "point": point_name,
             "equipment": link["equipment"],
             "occupied_value": link["occupied_value"],
             "unoccupied_value": link["unoccupied_value"],
             "current_baseline": schedules.linked_point_baseline(schedule, point_name, resolved["value"]),
-            "driven_by": "override" if override else "schedule",
+            # What actually drives the point now: an override or a Wire Sheet
+            # write can shadow the schedule's link.
+            "driven_by": point_state["driven_by"],
+            "wiresheet_id": point_state["wiresheet_id"],
         })
     return {
         "schedule_id": schedule["schedule_id"],
@@ -473,30 +542,43 @@ def get_wiresheet(wiresheet_id: str) -> dict[str, Any]:
     if ws is None:
         raise HTTPException(status_code=404, detail=f"Wire Sheet {wiresheet_id!r} not found")
 
-    now = datetime.now(timezone.utc)
-    schedule_ctx = {}
-    for schedule_id in wiresheets.referenced_schedule_ids(ws):
-        schedule = schedules.find_schedule(schedule_id)
-        if schedule is not None:
-            schedule_ctx[schedule_id] = schedules.effective_output(schedule, now)["value"]
+    snapshot, overrides, now, _, layer = _request_state()
+    fault = layer["faults"].get(wiresheet_id)
+    try:
+        resolved = wiresheets.evaluate(ws, layer["context"])
+    except (ValueError, KeyError, TypeError):
+        # The layer already recorded this as the sheet's fault (if it
+        # writes anything); show the sheet unresolved rather than a 500.
+        resolved = {}
+        if fault is None:
+            fault = {"error": "evaluation failed", "released_points": []}
 
-    point_ctx: dict[str, Any] = {}
-    point_names = wiresheets.referenced_point_names(ws)
-    if point_names:
-        snapshot = _load_points_file()
-        overrides = _load_overrides()
-        for name in point_names:
-            point_ctx[name] = _resolve_point_value(name, snapshot, overrides, now)["value"]
-
-    resolved = wiresheets.evaluate(ws, {"schedules": schedule_ctx, "points": point_ctx})
+    def write_status(block: dict[str, Any]) -> dict[str, Any] | None:
+        if block["type"] != "PointWriteRef":
+            return None
+        point = block["config"]["point"]
+        if fault is not None:
+            return {"state": "released_fault", "point": point}
+        if point in overrides:
+            return {"state": "shadowed_by_override", "point": point}
+        write = layer["writes"].get(point)
+        if write is not None and write["wiresheet_id"] == wiresheet_id:
+            return {"state": "writing", "point": point, "value": write["value"]}
+        return {"state": "released_null", "point": point}
 
     return {
         "wiresheet_id": ws["wiresheet_id"],
         "display_name": ws.get("display_name", ws["wiresheet_id"]),
         "ord": ws.get("ord"),
         "description": ws.get("description"),
+        "fault": fault,
         "blocks": [
-            {**block, "slots": wiresheets.slot_spec(block["type"]), "resolved": resolved.get(block["block_id"], {})}
+            {
+                **block,
+                "slots": wiresheets.slot_spec(block["type"]),
+                "resolved": resolved.get(block["block_id"], {}),
+                "write_status": write_status(block),
+            }
             for block in ws["blocks"]
         ],
         "links": ws.get("links", []),
@@ -507,9 +589,27 @@ def get_wiresheet(wiresheet_id: str) -> dict[str, Any]:
 def _wiresheet_reference_inventory() -> dict[str, set[str]]:
     """Points and schedules a Wire Sheet block may reference on save."""
     return {
-        "known_points": {pt["point"] for pt in _load_input_points()},
+        "known_points": set(_wiresheet_point_meta(_load_input_points())),
         "known_schedules": {s["schedule_id"] for s in schedules.load_schedules()},
     }
+
+
+def _wiresheet_write_errors(ws: dict[str, Any], others: list[dict[str, Any]]) -> list[str]:
+    """Save/restore checks beyond shape: write targets, one writer per point,
+    and the sheet's outputs against current values.
+
+    Only called once validate_wiresheet() passed.
+    """
+    snapshot, overrides, now = _load_points_file(), _load_overrides(), datetime.now(timezone.utc)
+    meta = _wiresheet_point_meta(_load_input_points())
+    errors = wiresheets.validate_write_targets(ws, others, meta)
+    if errors:
+        return errors
+    context = _wiresheet_context([ws], snapshot, overrides, now)
+    _, faults = wiresheets.collect_point_writes([ws], context, meta)
+    if ws["wiresheet_id"] in faults:
+        return [f"output check against current values failed: {faults[ws['wiresheet_id']]['error']}"]
+    return []
 
 
 def _entity_from_backup(backup_dir: str, filename: str, id_key: str, entity_id: str) -> dict[str, Any]:
@@ -652,7 +752,7 @@ def save_wiresheet(
     candidate = {**existing, "blocks": body.blocks, "links": body.links}
     errors = wiresheets.validate_wiresheet(
         candidate, sheets, is_create=False, **_wiresheet_reference_inventory()
-    )
+    ) or _wiresheet_write_errors(candidate, [w for w in sheets if w["wiresheet_id"] != wiresheet_id])
     if errors:
         raise HTTPException(status_code=400, detail={"errors": errors})
 
@@ -713,7 +813,7 @@ def restore_wiresheet(
         load=wiresheets.load_wiresheets, save=wiresheets.save_wiresheets,
         validate=lambda ws, others: wiresheets.validate_wiresheet(
             ws, others, is_create=True, **_wiresheet_reference_inventory()
-        ),
+        ) or _wiresheet_write_errors(ws, others),
     )
 
 
@@ -735,22 +835,22 @@ def get_px_page(px_id: str) -> dict[str, Any]:
     if page is None:
         raise HTTPException(status_code=404, detail=f"Px page {px_id!r} not found")
 
-    snapshot = _load_points_file()
-    overrides = _load_overrides()
-    input_pts = {pt["point"]: pt for pt in _load_input_points()}
-    now = datetime.now(timezone.utc)
+    snapshot, overrides, now, input_list, layer = _request_state()
+    input_pts = {pt["point"]: pt for pt in input_list}
 
     widgets = []
     for widget in page["widgets"]:
         point_name = widget["point"]
         meta = input_pts.get(point_name, {})
-        resolved = _resolve_point_value(point_name, snapshot, overrides, now)
+        resolved = _resolve_point_value(point_name, snapshot, overrides, now, layer)
         widgets.append({
             **widget,
             "value": resolved["value"],
             "units": meta.get("units"),
             "driven_by": resolved["driven_by"],
             "schedule_id": resolved["schedule_id"],
+            "wiresheet_id": resolved["wiresheet_id"],
+            "wiresheet_fault": resolved["wiresheet_fault"],
             "overridden": resolved["overridden"],
         })
 

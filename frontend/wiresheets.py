@@ -11,11 +11,38 @@ Blocks that reference live data (ScheduleRef, PointRef) don't reach out
 for it themselves -- the caller supplies a `context` dict of already-read
 values, keeping this module a pure evaluator with no file or network
 access of its own.
+
+Point writes (PointWriteRef). collect_point_writes() turns every sheet's
+PointWriteRef outputs into writes the API layers onto point values using
+this lab's source-precedence convention:
+
+    8  operator override        (wins)
+    10 Wire Sheet PointWriteRef
+    16 schedule baseline
+    -- simulator value          (fallback)
+
+The numbers borrow Niagara/BACnet priority-slot vocabulary for teaching.
+This is not a complete priority array: there is one Wire Sheet level, not
+per-block priorities, and no relinquish-default or minimum-on/off timing.
+
+Supported semantics, deliberately limited:
+  * PointRef reads only the underlying value (override -> schedule ->
+    simulator), never another sheet's write. Cross-sheet chaining (sheet A
+    writes X, sheet B reads X and sees A's value) is NOT supported.
+  * Every sheet is computed from one consistent per-request snapshot of
+    those underlying values.
+  * One writer per point, across all sheets and within a sheet; enforced
+    at save/restore by validate_write_targets().
+  * A null output writes nothing (the point falls through to the next
+    source). A failed evaluation or an invalid output (wrong type,
+    non-finite number, target no longer writable) faults the whole sheet:
+    all of its writes are released and the fault is reported.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -94,6 +121,10 @@ def validate_block_config(block: dict[str, Any]) -> list[str]:
         errors.append(
             f"block {block.get('block_id')!r} config key 'value' must be a number or boolean, got {config['value']!r}"
         )
+    elif block_type == "Constant" and isinstance(config["value"], float) and not math.isfinite(config["value"]):
+        errors.append(
+            f"block {block.get('block_id')!r} config key 'value' must be a finite number, got {config['value']!r}"
+        )
     return errors
 
 
@@ -125,12 +156,127 @@ def validate_block_references(
     if block_type in ("PointRef", "PointWriteRef") and known_points is not None:
         point = block["config"]["point"]
         if point not in known_points:
-            return [f"block {block['block_id']!r} references unknown point {point!r}"]
+            return [f"block {block['block_id']!r} references unknown point {point!r} (not a point on this Niagara station)"]
     if block_type == "ScheduleRef" and known_schedules is not None:
         schedule_id = block["config"]["schedule_id"]
         if schedule_id not in known_schedules:
             return [f"block {block['block_id']!r} references unknown schedule {schedule_id!r}"]
     return []
+
+
+def _write_blocks(ws: dict[str, Any]) -> list[dict[str, Any]]:
+    return [b for b in ws["blocks"] if b.get("type") == "PointWriteRef"]
+
+
+def validate_write_targets(
+    ws: dict[str, Any],
+    other_sheets: list[dict[str, Any]],
+    point_meta: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Save/restore checks for PointWriteRef targets.
+
+    point_meta holds only points a Wire Sheet may touch (hospital/office;
+    Building 822 is excluded by the caller). Each target must be in it and
+    writable, and each point may have exactly one writer across all sheets.
+    Assumes validate_wiresheet() already passed (config shapes are sound).
+    """
+    errors: list[str] = []
+    writers: dict[str, list[str]] = {}
+    for block in _write_blocks(ws):
+        point = block["config"]["point"]
+        meta = point_meta.get(point)
+        if meta is None:
+            errors.append(f"block {block['block_id']!r}: {point!r} is not a writable hospital/office point")
+        elif not meta.get("writable"):
+            errors.append(f"block {block['block_id']!r}: point {point!r} is read-only")
+        writers.setdefault(point, []).append(block["block_id"])
+
+    for point, block_ids in writers.items():
+        if len(block_ids) > 1:
+            errors.append(f"point {point!r} is written by more than one block: {', '.join(block_ids)}")
+
+    for other in other_sheets:
+        if other.get("wiresheet_id") == ws["wiresheet_id"]:
+            continue
+        for block in _write_blocks(other):
+            point = block.get("config", {}).get("point")
+            if point in writers:
+                errors.append(f"point {point!r} is already written by Wire Sheet {other['wiresheet_id']!r}")
+    return errors
+
+
+def check_write_value(value: Any, meta: dict[str, Any]) -> tuple[Any, str | None]:
+    """(value to write, error). (None, None) means null: release, no write.
+
+    Boolean points take a real boolean (stored as 1/0, like operator
+    commands); numeric points take a finite non-boolean number.
+    """
+    if value is None:
+        return None, None
+    if meta.get("units") == "bool":
+        if not isinstance(value, bool):
+            return None, f"needs a boolean, got {value!r}"
+        return int(value), None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, f"needs a number, got {value!r}"
+    if not math.isfinite(value):
+        return None, f"got non-finite number {value!r}"
+    return round(float(value), 3), None
+
+
+def collect_point_writes(
+    sheets: list[dict[str, Any]],
+    context: dict[str, Any],
+    point_meta: dict[str, dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Evaluate every sheet once and gather its PointWriteRef writes.
+
+    Returns (writes, faults):
+      writes: {point: {"value", "wiresheet_id", "block_id"}}
+      faults: {wiresheet_id: {"error", "released_points"}}
+    A faulted sheet contributes no writes at all.
+    """
+    writes: dict[str, dict[str, Any]] = {}
+    faults: dict[str, dict[str, Any]] = {}
+    for ws in sheets:
+        write_blocks = _write_blocks(ws)
+        if not write_blocks:
+            continue
+        targets = sorted({b["config"]["point"] for b in write_blocks})
+        sheet_id = ws["wiresheet_id"]
+
+        def fault(error: str) -> None:
+            faults[sheet_id] = {"error": error, "released_points": targets}
+
+        try:
+            resolved = evaluate(ws, context)
+        except (ValueError, KeyError, TypeError) as exc:
+            fault(f"evaluation failed: {exc}")
+            continue
+
+        pending: dict[str, dict[str, Any]] = {}
+        error = None
+        for block in write_blocks:
+            point = block["config"]["point"]
+            meta = point_meta.get(point)
+            if meta is None or not meta.get("writable"):
+                error = f"block {block['block_id']!r}: target {point!r} is missing or read-only"
+                break
+            value, err = check_write_value(resolved[block["block_id"]].get("out"), meta)
+            if err:
+                error = f"block {block['block_id']!r} writing {point!r} {err}"
+                break
+            if value is not None:
+                pending[point] = {"value": value, "wiresheet_id": sheet_id, "block_id": block["block_id"]}
+        if error is None:
+            taken = next((p for p in pending if p in writes), None)
+            if taken is not None:
+                error = f"point {taken!r} is already written by Wire Sheet {writes[taken]['wiresheet_id']!r}"
+        if error is not None:
+            fault(error)
+            continue
+        writes.update(pending)
+    return writes, faults
 
 
 def slot_spec(block_type: str) -> dict[str, list[str]]:
@@ -554,7 +700,106 @@ def self_test() -> int:
         errs = validate_wiresheet(bad_ws, [], is_create=True)
         assert any(needle in e for e in errs), (label, errs)
 
+    _self_test_point_writes()
     print("wiresheets self-test passed")
+
+
+def _self_test_point_writes() -> None:
+    meta = {
+        "SP_NUM": {"writable": True, "units": "F"},
+        "CMD_BOOL": {"writable": True, "units": "bool"},
+        "SENSOR": {"writable": False, "units": "F"},
+    }
+
+    def sheet(sid: str, blocks: list[dict[str, Any]], links: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        return {"wiresheet_id": sid, "display_name": sid, "blocks": blocks, "links": links or []}
+
+    def const(bid: str, value: Any, y: int = 0) -> dict[str, Any]:
+        return {"block_id": bid, "type": "Constant", "x": 0, "y": y, "config": {"value": value}}
+
+    def write(bid: str, point: str, y: int = 0) -> dict[str, Any]:
+        return {"block_id": bid, "type": "PointWriteRef", "x": 200, "y": y, "config": {"point": point}}
+
+    def wire(src: str, dst: str) -> dict[str, Any]:
+        return {"from": src, "from_slot": "out", "to": dst, "to_slot": "in"}
+
+    # --- Save/restore-time target validation.
+    ok = sheet("A", [const("K", 70), write("W", "SP_NUM")], [wire("K", "W")])
+    assert validate_write_targets(ok, [], meta) == [], validate_write_targets(ok, [], meta)
+
+    errs = validate_write_targets(sheet("A", [write("W", "NOT_HERE")]), [], meta)
+    assert any("is not a writable hospital/office point" in e for e in errs), errs
+    errs = validate_write_targets(sheet("A", [write("W", "SENSOR")]), [], meta)
+    assert any("'SENSOR' is read-only" in e for e in errs), errs
+
+    dup_within = sheet("A", [const("K", 70), write("W1", "SP_NUM"), write("W2", "SP_NUM", 50)],
+                       [wire("K", "W1"), wire("K", "W2")])
+    errs = validate_write_targets(dup_within, [], meta)
+    assert any("written by more than one block" in e and "W1" in e and "W2" in e for e in errs), errs
+
+    other = sheet("B", [const("K", 65), write("WB", "SP_NUM")], [wire("K", "WB")])
+    errs = validate_write_targets(ok, [other], meta)
+    assert any("'SP_NUM' is already written by Wire Sheet 'B'" in e for e in errs), errs
+
+    # --- Output value checks.
+    assert check_write_value(None, meta["SP_NUM"]) == (None, None)
+    assert check_write_value(71.23456, meta["SP_NUM"]) == (71.235, None)
+    assert check_write_value(True, meta["CMD_BOOL"]) == (1, None)
+    assert check_write_value(False, meta["CMD_BOOL"]) == (0, None)
+    for bad, m, needle in [
+        (1, meta["CMD_BOOL"], "needs a boolean"),
+        (True, meta["SP_NUM"], "needs a number"),
+        ("72", meta["SP_NUM"], "needs a number"),
+        (float("nan"), meta["SP_NUM"], "non-finite"),
+        (float("inf"), meta["SP_NUM"], "non-finite"),
+    ]:
+        value, err = check_write_value(bad, m)
+        assert value is None and err and needle in err, (bad, value, err)
+
+    # Constant values must be finite too (JSON bodies can carry NaN/Infinity).
+    errs = validate_wiresheet(sheet("N", [const("K", float("nan"))]), [], is_create=True)
+    assert any("must be a finite number" in e for e in errs), errs
+
+    # --- Runtime collection.
+    ctx = {"schedules": {"OCC": True}, "points": {"TEXT_POINT": "abc"}}
+    writes, faults = collect_point_writes([ok], ctx, meta)
+    assert writes == {"SP_NUM": {"value": 70, "wiresheet_id": "A", "block_id": "W"}}, writes
+    assert faults == {}, faults
+
+    # A null output releases the point: no write, and no fault.
+    released = sheet("R", [{"block_id": "P", "type": "PointRef", "x": 0, "y": 0, "config": {"point": "MISSING"}},
+                           write("W", "SP_NUM")], [wire("P", "W")])
+    writes, faults = collect_point_writes([released], ctx, meta)
+    assert writes == {} and faults == {}, (writes, faults)
+
+    # Incompatible output type: fault, and the sheet's other (valid) write is released too.
+    mixed = sheet("M", [const("K", 70), const("B", 5, 50), write("W1", "SP_NUM"), write("W2", "CMD_BOOL", 50)],
+                  [wire("K", "W1"), wire("B", "W2")])
+    writes, faults = collect_point_writes([mixed], ctx, meta)
+    assert writes == {}, writes
+    assert "needs a boolean" in faults["M"]["error"] and faults["M"]["released_points"] == ["CMD_BOOL", "SP_NUM"], faults
+
+    # Evaluation failure (string point value into Compare): fault, writes released.
+    boom = sheet("E", [{"block_id": "P", "type": "PointRef", "x": 0, "y": 0, "config": {"point": "TEXT_POINT"}},
+                       const("K", 5, 50),
+                       {"block_id": "C", "type": "Compare", "x": 100, "y": 0, "config": {"op": ">"}},
+                       write("W", "CMD_BOOL")],
+                 [{"from": "P", "from_slot": "out", "to": "C", "to_slot": "a"},
+                  {"from": "K", "from_slot": "out", "to": "C", "to_slot": "b"},
+                  {"from": "C", "from_slot": "out", "to": "W", "to_slot": "in"}])
+    writes, faults = collect_point_writes([boom], ctx, meta)
+    assert writes == {} and "evaluation failed" in faults["E"]["error"], (writes, faults)
+    assert faults["E"]["released_points"] == ["CMD_BOOL"], faults
+
+    # Target became read-only after save (inventory changed): fault, not a write.
+    writes, faults = collect_point_writes([sheet("S", [const("K", 1), write("W", "SENSOR")], [wire("K", "W")])], ctx, meta)
+    assert writes == {} and "read-only" in faults["S"]["error"], (writes, faults)
+
+    # Conflicting writers that got into the file anyway: first sheet keeps the
+    # point, the later sheet faults and releases.
+    writes, faults = collect_point_writes([ok, other], ctx, meta)
+    assert writes["SP_NUM"]["wiresheet_id"] == "A", writes
+    assert "already written by Wire Sheet 'A'" in faults["B"]["error"], faults
     return 0
 
 

@@ -14,7 +14,7 @@ const HTML_PATH = path.join(__dirname, '..', 'frontend', 'static', 'niagara.html
 
 function extractFunction(source, name) {
   // Naive brace counter: no guard against '{'/'}' occurring inside a
-  // string or template literal. Fine for the current 6 target functions
+  // string or template literal. Fine for the current 7 target functions
   // (no such literals in their bodies) -- revisit if reused on functions
   // that contain brace characters inside strings/templates.
   const marker = 'function ' + name + '(';
@@ -43,13 +43,13 @@ if (!scriptMatch) {
 }
 const scriptSource = scriptMatch[1];
 
-const functionNames = ['apiErrorText', 'backupOptionLabel', 'pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
+const functionNames = ['apiErrorText', 'backupOptionLabel', 'writeStatusLabel', 'pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
 const extracted = functionNames.map((name) => extractFunction(scriptSource, name)).join('\n\n');
 
 const sandbox = new Function(
-  extracted + '\nreturn {apiErrorText, backupOptionLabel, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
+  extracted + '\nreturn {apiErrorText, backupOptionLabel, writeStatusLabel, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
 );
-const { apiErrorText, backupOptionLabel, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
+const { apiErrorText, backupOptionLabel, writeStatusLabel, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
 
 let failures = 0;
 
@@ -173,6 +173,20 @@ check(
   'backupOptionLabel tolerates rows without kind/operator (older platform entries)',
   backupOptionLabel({ backup_dir: 'd', timestamp: '2026-09-23T01:02:03+00:00' }),
   '2026-09-23 01:02:03Z · backup · unknown'
+);
+
+check(
+  'writeStatusLabel describes each PointWriteRef state',
+  [writeStatusLabel({ state: 'writing', point: 'VAV301_TEMP_SP', value: 72 }),
+   writeStatusLabel({ state: 'released_null', point: 'VAV301_TEMP_SP' }),
+   writeStatusLabel({ state: 'shadowed_by_override', point: 'VAV301_TEMP_SP' }),
+   writeStatusLabel({ state: 'released_fault', point: 'VAV301_TEMP_SP' }),
+   writeStatusLabel(null)],
+  ['writing 72 -> VAV301_TEMP_SP',
+   'null: released VAV301_TEMP_SP',
+   'shadowed: operator override on VAV301_TEMP_SP',
+   'FAULT: write to VAV301_TEMP_SP released',
+   '']
 );
 
 if (failures > 0) {
