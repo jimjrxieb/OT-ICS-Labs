@@ -1182,13 +1182,19 @@ async function refreshWireSheetLinkSlotOptions() {
   if (priorFrom) fromSelect.value = priorFrom;
   if (priorTo) toSelect.value = priorTo;
 
+  // Rebuilding a slot list must keep the user's slot choice when it is still
+  // valid: two refreshes can overlap (from-block and to-block changes), and
+  // the later one used to reset a slot the user had already picked.
+  function fillSlots(selectId, slots) {
+    const select = document.getElementById(selectId);
+    const prior = select.value;
+    select.innerHTML = slots.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+    if (slots.includes(prior)) select.value = prior;
+  }
   const fromBlock = blocksById[fromSelect.value];
-  const fromSlots = fromBlock ? (wsBlockTypes[fromBlock.type] || {outputs: []}).outputs : [];
-  document.getElementById('ws-link-from-slot').innerHTML = fromSlots.map(s => '<option value="' + s + '">' + s + '</option>').join('');
-
+  fillSlots('ws-link-from-slot', fromBlock ? (wsBlockTypes[fromBlock.type] || {outputs: []}).outputs : []);
   const toBlock = blocksById[toSelect.value];
-  const toSlots = toBlock ? (wsBlockTypes[toBlock.type] || {inputs: []}).inputs : [];
-  document.getElementById('ws-link-to-slot').innerHTML = toSlots.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+  fillSlots('ws-link-to-slot', toBlock ? (wsBlockTypes[toBlock.type] || {inputs: []}).inputs : []);
 }
 
 async function addWireSheetBlock() {
