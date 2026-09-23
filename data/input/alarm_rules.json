@@ -1,11 +1,332 @@
 [
-  {"point": "OR1_TEMP", "condition": "outside_normal", "priority": "critical", "message": "OR-1 temperature outside target range"},
-  {"point": "OR1_RH", "condition": "outside_normal", "priority": "critical", "message": "OR-1 humidity outside target range"},
-  {"point": "ISO201_PRESSURE", "condition": "outside_normal", "priority": "critical", "message": "Isolation Room 201 pressure not negative"},
-  {"point": "AHU_OR1_SAT", "condition": "outside_normal", "priority": "high", "message": "AHU-OR-1 discharge air temperature abnormal"},
-  {"point": "CHW_SUPPLY_TEMP", "condition": "outside_normal", "priority": "high", "message": "Chilled water supply temperature abnormal"},
-  {"point": "CHW_DIFF_PRESSURE", "condition": "outside_normal", "priority": "medium", "message": "Chilled water differential pressure abnormal"},
-  {"point": "CHILLER1_CHW_SUPPLY_TEMP", "condition": "outside_normal", "priority": "high", "message": "Chiller-1 chilled water supply temperature abnormal"},
-  {"point": "BOILER1_HW_SUPPLY_TEMP", "condition": "outside_normal", "priority": "high", "message": "Boiler-1 hot water supply temperature abnormal"},
-  {"point": "VAV301_TEMP", "condition": "outside_normal", "priority": "medium", "message": "VAV-301 zone temperature outside comfort range"}
+  {
+    "point": "OR1_TEMP",
+    "condition": "outside_normal",
+    "priority": "critical",
+    "message": "OR-1 temperature outside target range"
+  },
+  {
+    "point": "OR1_RH",
+    "condition": "outside_normal",
+    "priority": "critical",
+    "message": "OR-1 humidity outside target range"
+  },
+  {
+    "point": "ISO201_PRESSURE",
+    "condition": "outside_normal",
+    "priority": "critical",
+    "message": "Isolation Room 201 pressure not negative"
+  },
+  {
+    "point": "AHU_OR1_SAT",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "AHU-OR-1 discharge air temperature abnormal"
+  },
+  {
+    "point": "CHW_SUPPLY_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Chilled water supply temperature abnormal"
+  },
+  {
+    "point": "CHW_DIFF_PRESSURE",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Chilled water differential pressure abnormal"
+  },
+  {
+    "point": "CHILLERHOSP1_CHW_SUPPLY_TEMP",
+    "condition": "outside_normal",
+    "priority": "critical",
+    "message": "Lead chiller CHW-HOSP-1 leaving water temperature abnormal"
+  },
+  {
+    "point": "CHILLERHOSP1_CW_ENT_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Lead chiller CHW-HOSP-1 entering condenser water temperature abnormal -- check tower heat rejection"
+  },
+  {
+    "point": "CHILLERHOSP1_RUN_STATUS",
+    "condition": "outside_normal",
+    "priority": "critical",
+    "message": "Lead chiller CHILLER-HOSP-1 commanded on but not running"
+  },
+  {
+    "point": "CT1_BASIN_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Cooling tower basin temperature abnormal -- reduced heat rejection"
+  },
+  {
+    "point": "CT1_BASIN_LEVEL",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Cooling tower basin level abnormal -- check makeup water valve"
+  },
+  {
+    "point": "CHILLER1_CHW_SUPPLY_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Chiller-1 chilled water supply temperature abnormal"
+  },
+  {
+    "point": "BOILER1_HW_SUPPLY_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Boiler-1 hot water supply temperature abnormal"
+  },
+  {
+    "point": "VAV301_TEMP",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "VAV-301 zone temperature outside comfort range"
+  },
+  {
+    "point": "CHW822_ENT_SUP_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Building 822 entering chilled water temperature abnormal"
+  },
+  {
+    "point": "CHW822_BLDG_DT",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "Building 822 chilled water delta-T outside expected range"
+  },
+  {
+    "point": "RTAC822_EVAP_LVG_TEMP",
+    "condition": "outside_normal",
+    "priority": "high",
+    "message": "RTAC leaving evaporator water temperature off setpoint"
+  },
+  {
+    "point": "HALL_A1_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing A Floor 1 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_A2_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing A Floor 2 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_A3_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing A Floor 3 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_B1_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing B Floor 1 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_B2_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing B Floor 2 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_B3_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing B Floor 3 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_C1_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing C Floor 1 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_C2_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing C Floor 2 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_C3_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing C Floor 3 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_D1_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing D Floor 1 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_D2_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing D Floor 2 corridor humidity outside target range"
+  },
+  {
+    "point": "HALL_D3_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Wing D Floor 3 corridor humidity outside target range"
+  },
+  {
+    "point": "MAU01_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-01 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU01_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-01 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU02_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-02 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU02_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-02 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU03_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-03 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU03_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-03 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU04_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-04 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU04_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-04 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU05_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-05 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU05_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-05 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU06_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-06 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU06_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-06 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU07_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-07 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU07_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-07 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU08_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-08 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU08_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-08 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU09_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-09 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU09_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-09 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU10_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-10 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU10_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-10 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU11_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-11 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU11_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-11 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU12_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-12 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU12_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-12 supply air humidity abnormal"
+  },
+  {
+    "point": "MAU13_SAT",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-13 supply air temperature abnormal"
+  },
+  {
+    "point": "MAU13_SA_RH",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "MAU-13 supply air humidity abnormal"
+  }
 ]

@@ -1,0 +1,451 @@
+<!-- Building 822 — Tracer SC-style operator view. Synthetic lab. -->
+<title>Building 822 — Tracer SC</title>
+<style>
+  :root { --bg:#1b1f24; --panel:#242a31; --line:#39414a; --text:#dfe4ea;
+          --dim:#9aa5b1; --ok:#5ac18e; --warn:#e0a458; --bad:#d9534f; --accent:#4a90d9; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { background:var(--panel); border-bottom:1px solid var(--line);
+           padding:10px 16px; display:flex; align-items:center; gap:16px; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  .muted { color:var(--dim); font-size:12px; }
+  #connect { max-width:520px; margin:60px auto; background:var(--panel);
+             border:1px solid var(--line); border-radius:6px; padding:24px; }
+  #connect h2 { margin:0 0 4px; font-size:16px; }
+  label { display:block; margin:14px 0 4px; font-size:12px; color:var(--dim); }
+  select,input,button { font:inherit; padding:7px 9px; background:#1b1f24;
+                        color:var(--text); border:1px solid var(--line); border-radius:4px; }
+  select,input { width:100%; }
+  button { cursor:pointer; background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.secondary { background:transparent; color:var(--text); border-color:var(--line); }
+  #workspace { display:none; grid-template-columns:280px 1fr; height:calc(100vh - 45px); }
+  #tree { border-right:1px solid var(--line); overflow:auto; padding:10px; }
+  .node { padding:3px 6px; cursor:pointer; border-radius:3px; white-space:nowrap; }
+  .node:hover { background:#2c333b; }
+  .node.sel { background:var(--accent); color:#fff; }
+  .lvl1 { padding-left:16px; } .lvl2 { padding-left:32px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+         background:var(--ok); margin-right:6px; }
+  .dot.off { background:var(--bad); }
+  main { overflow:auto; padding:16px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:14px; }
+  .tab { padding:7px 14px; cursor:pointer; border-bottom:2px solid transparent; color:var(--dim); }
+  .tab.on { color:var(--text); border-bottom-color:var(--accent); }
+  .diag { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+          gap:1px; background:var(--line); border:1px solid var(--line);
+          border-radius:5px; overflow:hidden; margin-bottom:16px; }
+  .cell { background:var(--panel); padding:10px 12px; }
+  .cell .k { font-size:11px; color:var(--dim); text-transform:uppercase;
+             letter-spacing:.4px; margin-bottom:3px; }
+  .cell .v { font-size:19px; font-variant-numeric:tabular-nums; }
+  .cell.key { background:#2a323b; }
+  table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:500; font-size:12px; }
+  .wrap { overflow-x:auto; }
+  .err { color:var(--bad); } .note { color:var(--warn); }
+  tr.alarm td { color:var(--warn); }
+</style>
+
+<header>
+  <h1>Building 822 <span class="muted">Tracer SC</span></h1>
+  <span class="muted" id="connInfo"></span>
+  <span style="flex:1"></span>
+  <button class="secondary" id="disconnect" style="display:none">Disconnect</button>
+</header>
+
+<section id="connect">
+  <h2>Connect to Building 822</h2>
+  <p class="muted">Select where you are plugging in. What you can see depends on it.</p>
+  <label for="node">Connection point</label>
+  <select id="node">
+    <option value="SC-822-01">Tracer SC-822-01 — Ethernet (Wings A/B)</option>
+    <option value="SC-822-02">Tracer SC-822-02 — Ethernet (Wings C/D + Lobby)</option>
+    <option value="CHILLER-PANEL">RTAC local panel — walk-up</option>
+  </select>
+  <label for="role">Sign in as</label>
+  <select id="role"></select>
+  <label for="op">Operator ID</label>
+  <input id="op" value="tech-01" />
+  <p style="margin-top:18px"><button id="go">Connect</button></p>
+  <p class="muted" id="connErr"></p>
+</section>
+
+<div id="workspace">
+  <nav id="tree"></nav>
+  <main>
+    <div class="tabs">
+      <div class="tab on" data-tab="summary">Summary</div>
+      <div class="tab" data-tab="points">Points</div>
+      <div class="tab" data-tab="trends">Trends</div>
+      <div class="tab" data-tab="alarms">Alarms</div>
+      <div class="tab" data-tab="setpoints">Setpoints</div>
+    </div>
+    <div id="body"></div>
+  </main>
+</div>
+
+<script>
+const S = { node:null, role:null, op:null, sel:null, tab:'summary',
+            points:{}, byEquip:{}, topo:null };
+const $ = id => document.getElementById(id);
+const j = async u => { const r = await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json(); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function init(){
+  try {
+    const roles = await j('/api/roles');
+    $('role').innerHTML = roles.roles.map(r =>
+      `<option value="${esc(r)}"${r === 'technician' ? ' selected' : ''}>${esc(r)}</option>`).join('');
+  } catch(e){ $('role').innerHTML = '<option value="technician">technician</option>'; }
+}
+
+$('go').onclick = async () => {
+  S.node = $('node').value; S.role = $('role').value; S.op = $('op').value.trim();
+  $('connErr').textContent = '';
+  try { S.topo = await j('/api/topology?from=' + encodeURIComponent(S.node)); }
+  catch(e){ $('connErr').textContent = 'Cannot reach ' + S.node + ' (' + e.message + ')'; return; }
+  $('connect').style.display='none';
+  $('workspace').style.display='grid';
+  $('disconnect').style.display='inline-block';
+  $('connInfo').textContent = `connected at ${S.node} · ${S.role} · ${S.op}`;
+  if (S.node === 'CHILLER-PANEL'){ S.sel = {kind:'chiller'}; renderTree(); return render(); }
+  await refreshPoints(); renderTree(); render();
+};
+
+$('disconnect').onclick = () => location.reload();
+
+// /api/points returns {equipment: {EQUIP_ID: [{point, equipment, facility, value, units,
+// writable, status, overridden, ...}]}} — keyed by equipment, and the name field is
+// "point", not "name". Verified against bas_api.py:211 get_points().
+async function refreshPoints(){
+  const data = await j('/api/points');
+  S.byEquip = data.equipment;
+  S.points = {};
+  Object.values(S.byEquip).forEach(list => list.forEach(p => { S.points[p.point] = p; }));
+}
+
+function renderTree(){
+  const t = $('tree');
+  if (S.node === 'CHILLER-PANEL'){
+    t.innerHTML = `<div class="node sel"><span class="dot"></span>RTAC local panel</div>
+      <div class="muted lvl1" style="margin-top:8px">No BACnet integration.<br>Walk-up display only.</div>`;
+    return;
+  }
+  let h = `<div class="node" data-kind="sc"><span class="dot"></span>${esc(S.topo.supervisory.id)}</div>`;
+  S.topo.trunks.forEach(tr => {
+    const allUp = tr.online_count === tr.member_count;
+    h += `<div class="node lvl1" data-kind="trunk" data-id="${esc(tr.id)}">
+            <span class="dot${allUp?'':' off'}"></span>${esc(tr.id)}
+            <span class="muted">${tr.online_count} of ${tr.member_count}</span></div>`;
+    tr.members.forEach(mem => {
+      h += `<div class="node lvl2" data-kind="device" data-id="${esc(mem.id)}">
+              <span class="dot${mem.online?'':' off'}"></span>${esc(mem.id)}</div>`;
+    });
+  });
+  t.innerHTML = h;
+  t.querySelectorAll('.node[data-kind="device"]').forEach(n => {
+    n.onclick = () => {
+      t.querySelectorAll('.node').forEach(x => x.classList.remove('sel'));
+      n.classList.add('sel');
+      S.sel = { kind:'device', id:n.dataset.id };
+      render();
+    };
+  });
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    tab.classList.add('on'); S.tab = tab.dataset.tab; render();
+  };
+});
+
+// Points already carry their equipment id from the API, so group by that directly.
+function pointsFor(equipId){
+  return (S.byEquip[equipId] || []).map(p => ({ name:p.point, ...p }));
+}
+
+function cell(k, v, key){
+  return `<div class="cell${key?' key':''}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`;
+}
+
+function val(name){ const p = S.points[name]; return p && p.value !== null ? p.value : '—'; }
+
+async function render(){
+  const b = $('body');
+  if (!S.sel){ b.innerHTML = '<p class="muted">Select a controller in the tree.</p>'; return; }
+
+  if (S.sel.kind === 'chiller'){
+    try {
+      const c = await j('/api/chiller/822');
+      b.innerHTML = `<div class="diag">
+        ${cell('Evap entering', c.evap_entering_f + ' °F')}
+        ${cell('Evap leaving', c.evap_leaving_f + ' °F', true)}
+        ${cell('Leaving SP', c.evap_leaving_setpoint_f + ' °F')}
+        ${cell('Ambient', c.ambient_f + ' °F')}
+        ${cell('Capacity', c.pct_capacity + ' %', true)}
+        ${cell('Diagnostic', c.active_diagnostic)}</div>
+        <p class="muted">${esc(c.model_family)} · serial ${esc(c.serial)} · ${esc(c.reference)}</p>
+        <p class="note">${esc(c.integration)}</p>
+        <div class="wrap"><table><tr><th>Circuit</th><th>Running</th><th>Condenser fan</th></tr>
+        ${c.circuits.map(ct => `<tr><td>${ct.id}</td><td>${ct.running?'Yes':'No'}</td>
+          <td>${ct.condenser_fan_ok?'OK':'FAIL'}</td></tr>`).join('')}</table></div>`;
+    } catch(e){ b.innerHTML = `<p class="err">Chiller panel unavailable: ${esc(e.message)}</p>`; }
+    return;
+  }
+
+  const id = S.sel.id;
+  const mine = pointsFor(id);
+
+  if (S.tab === 'summary'){
+    // Device ids are MAU-01 .. MAU-13; their points are prefixed MAU01_.
+    const m = id.match(/^MAU-(\d+)$/);
+    if (m){
+      const t = 'MAU' + m[1];
+      b.innerHTML = `<h3>${esc(id)} — makeup air</h3><div class="diag">
+        ${cell('Entering air', val(t+'_EAT') + ' °F')}
+        ${cell('Entering RH', val(t+'_EA_RH') + ' %')}
+        ${cell('OA damper', val(t+'_OA_DMPR_POS') + ' %')}
+        ${cell('CHW valve', val(t+'_CHW_VLV_POS') + ' %', true)}
+        ${cell('Supply air', val(t+'_SAT') + ' °F', true)}
+        ${cell('Supply SP', val(t+'_SAT_SP') + ' °F')}
+        ${cell('Coil ΔT', val(t+'_COIL_DT') + ' °F', true)}
+        ${cell('Supply RH', val(t+'_SA_RH') + ' %')}</div>
+        <p class="muted">Valve modulating with supply air at setpoint is healthy.
+        Valve pegged with supply air above setpoint means the coil is not doing
+        what it is being told to do — check water before you check controls.</p>`
+        + commandPanel(mine);
+      wireCommandPanel(mine);
+      return;
+    }
+    if (id === 'CHW-822'){
+      b.innerHTML = `<h3>CHW service entrance</h3><div class="diag">
+        ${cell('Entering water', val('CHW822_ENT_SUP_TEMP') + ' °F', true)}
+        ${cell('Return water', val('CHW822_ENT_RET_TEMP') + ' °F')}
+        ${cell('Building ΔT', val('CHW822_BLDG_DT') + ' °F', true)}
+        ${cell('Building DP', val('CHW822_BLDG_DP') + ' psid')}
+        ${cell('Strainer DP', val('CHW822_STRAINER_DP') + ' psid', true)}
+        ${cell('Pump P-1', val('CHW822_P1_STATUS') == 1 ? 'Running' : 'Off')}
+        ${cell('Pump P-2', val('CHW822_P2_STATUS') == 1 ? 'Running' : 'Off')}</div>
+        <p class="muted">Entering water well above 44 °F is not a building problem —
+        the chiller is off-tree. Walk up to it. A collapsed ΔT with normal entering
+        water is a flow problem: strainer, pumps, or a three-way valve.</p>`
+        + commandPanel(mine);
+      wireCommandPanel(mine);
+      return;
+    }
+    b.innerHTML = `<h3>${esc(id)}</h3>` + renderTable(mine) + commandPanel(mine);
+    wireCommandPanel(mine);
+    return;
+  }
+
+  if (S.tab === 'points'){
+    b.innerHTML = renderTable(mine) + commandPanel(mine);
+    wireCommandPanel(mine);
+    return;
+  }
+
+  if (S.tab === 'trends'){
+    if (!mine.length){ b.innerHTML = '<p class="muted">No points.</p>'; return; }
+    const first = mine[0].name;
+    try {
+      const tr = await j('/api/trends/' + encodeURIComponent(first));
+      b.innerHTML = `<p class="muted">${esc(first)} — most recent first</p><div class="wrap"><table>
+        <tr><th>Timestamp</th><th>Value</th></tr>
+        ${tr.rows.slice(-40).reverse().map(r =>
+          `<tr><td>${esc(r.timestamp)}</td><td>${esc(r.value)}</td></tr>`).join('')}</table></div>`;
+    } catch(e){ b.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    return;
+  }
+
+  if (S.tab === 'alarms'){
+    try {
+      const a = await j('/api/alarms');
+      // Filter by the point's own facility rather than a name pattern, so hospital
+      // and office alarms can never leak into the 822 view.
+      const rows = a.alarms.filter(x => {
+        const p = S.points[x.point];
+        return p && p.facility === 'barracks822';
+      });
+      b.innerHTML = rows.length ? `<div class="wrap"><table>
+        <tr><th>Timestamp</th><th>Point</th><th>Priority</th><th>Message</th></tr>
+        ${rows.map(r => `<tr class="alarm"><td>${esc(r.timestamp)}</td><td>${esc(r.point)}</td>
+          <td>${esc(r.priority)}</td><td>${esc(r.message)}</td></tr>`).join('')}</table></div>`
+        : '<p class="muted">No active alarms in Building 822.</p>';
+    } catch(e){ b.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    return;
+  }
+
+  if (S.tab === 'setpoints'){
+    // Points reachable from wherever we're connected -- the same "what you
+    // see depends on where you plug in" rule as the device tree, not a
+    // building-wide dump regardless of connection. CHILLER-PANEL's topology
+    // has an empty trunks list, so this naturally renders "no points" there
+    // rather than needing a separate case.
+    const reachable = new Set();
+    (S.topo.trunks || []).forEach(tr => tr.members.forEach(m => reachable.add(m.equipment)));
+    const rows = Object.values(S.points)
+      .filter(p => p.writable && reachable.has(p.equipment))
+      .sort((a, b) => a.point.localeCompare(b.point));
+    if (!rows.length){
+      b.innerHTML = '<p class="muted">No commandable points reachable from here.</p>';
+      return;
+    }
+    b.innerHTML = `<p class="muted">Every commandable point reachable from ${esc(S.node)} — ${rows.length} points.</p>
+      <div class="wrap"><table><tr><th>Point</th><th>Equipment</th><th>Current</th><th>Set to</th><th></th><th></th></tr>
+      ${rows.map(p => `<tr data-point="${esc(p.point)}"${p.status === 'alarm' ? ' class="alarm"' : ''}>
+        <td>${esc(p.point)}${p.overridden ? ' <span class="note">(overridden)</span>' : ''}</td>
+        <td>${esc(p.equipment)}</td>
+        <td>${esc(currentValueLabel(p))}</td>
+        <td>${valueControlHtml(p, '')}</td>
+        <td><button class="spGo">Command</button></td>
+        <td><button class="secondary spRel">Release</button></td>
+      </tr>`).join('')}</table></div>
+      <p id="spMsg" class="muted" style="margin-top:8px"></p>`;
+    wireSetpoints();
+    return;
+  }
+}
+
+// A point's kind decides what "current value" and "set to" should look like:
+// binary shows On/Off not 0/1, multi-state shows its named state not an
+// index, everything else shows the raw number with its units.
+function currentValueLabel(p){
+  if (p.value === null || p.value === undefined) return '—';
+  if (p.type === 'BO' || p.type === 'BI') return p.value == 1 ? 'On' : 'Off';
+  if (p.type === 'MV' && p.states) return p.states[p.value] ?? p.value;
+  const unit = (p.units && p.units !== 'bool' && p.units !== 'state') ? ' ' + p.units : '';
+  return p.value + unit;
+}
+
+function valueControlHtml(p, id){
+  const idAttr = id ? ` id="${esc(id)}"` : '';
+  if (p.type === 'BO'){
+    return `<select${idAttr} class="valCtl"><option value="1">On</option><option value="0">Off</option></select>`;
+  }
+  if (p.type === 'MV' && p.states){
+    return `<select${idAttr} class="valCtl">${p.states.map((s, i) =>
+      `<option value="${i}">${esc(s)}</option>`).join('')}</select>`;
+  }
+  const unit = (p.units && p.units !== 'bool' && p.units !== 'state') ? p.units : '';
+  return `<span style="display:flex;gap:6px;align-items:center">
+    <input${idAttr} class="valCtl" type="number" step="any" style="flex:1;min-width:70px">
+    <span class="muted">${esc(unit)}</span></span>`;
+}
+
+function wireSetpoints(){
+  const table = $('body').querySelector('table');
+  if (!table) return;
+  table.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const tr = btn.closest('tr[data-point]');
+    if (!tr) return;
+    const pt = tr.dataset.point;
+    const verb = btn.classList.contains('spGo') ? 'command' : 'release';
+    const msg = $('spMsg');
+    const qs = new URLSearchParams({ role:S.role, operator_id:S.op, reason:'tracer setpoints' });
+    if (verb === 'command'){
+      const v = tr.querySelector('.valCtl').value;
+      if (v === ''){ msg.className='err'; msg.textContent='Enter a value for ' + pt + '.'; return; }
+      qs.set('value', v);
+    }
+    msg.className='muted'; msg.textContent = verb + 'ing ' + pt + '...';
+    try {
+      const r = await fetch(`/api/points/${encodeURIComponent(pt)}/${verb}?` + qs, { method:'POST' });
+      const body = await r.json().catch(() => ({}));
+      if (r.status === 403){
+        msg.className='err';
+        msg.textContent = `403 Forbidden — role "${S.role}" may not command. ` +
+                          `Reconnect as technician or admin. (${body.detail || ''})`;
+        return;
+      }
+      if (!r.ok){ msg.className='err'; msg.textContent = r.status + ' — ' + (body.detail || 'rejected'); return; }
+      msg.className='note';
+      msg.textContent = `${pt} ${body.status || verb + 'd'}. Re-run the simulator to see the building respond.`;
+      await refreshPoints(); render();
+    } catch(e){ msg.className='err'; msg.textContent = e.message; }
+  });
+}
+
+// Point option text names its kind so the dropdown itself tells you what
+// you're about to set -- On/Off, a named state list, or a unit.
+function pointOptionLabel(p){
+  if (p.type === 'BO') return `${p.name} (On/Off)`;
+  if (p.type === 'MV' && p.states) return `${p.name} (${p.states.join('/')})`;
+  const unit = (p.units && p.units !== 'bool' && p.units !== 'state') ? p.units : '';
+  return unit ? `${p.name} (${unit})` : p.name;
+}
+
+function commandPanel(rows){
+  const writable = rows.filter(p => p.writable);
+  if (!writable.length) return '';
+  const first = writable[0];
+  return `<h4 style="margin:18px 0 6px">Command</h4>
+    <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; max-width:640px">
+      <div style="flex:2 1 220px">
+        <label for="cmdPt">Point</label>
+        <select id="cmdPt">${writable.map(p =>
+          `<option value="${esc(p.name)}">${esc(pointOptionLabel(p))}</option>`).join('')}</select>
+      </div>
+      <div style="flex:1 1 140px" id="cmdValWrap">
+        <label for="cmdVal">Value</label>
+        ${valueControlHtml(first, 'cmdVal')}
+      </div>
+      <button id="cmdGo">Command</button>
+      <button class="secondary" id="cmdRel">Release</button>
+    </div>
+    <p id="cmdMsg" class="muted" style="margin-top:8px"></p>`;
+}
+
+function wireCommandPanel(rows){
+  const go = $('cmdGo'), rel = $('cmdRel'), ptSel = $('cmdPt');
+  if (!go) return;
+  const byName = {};
+  rows.filter(p => p.writable).forEach(p => { byName[p.name] = p; });
+  ptSel.onchange = () => {
+    $('cmdValWrap').innerHTML = `<label for="cmdVal">Value</label>` +
+      valueControlHtml(byName[ptSel.value], 'cmdVal');
+  };
+  const send = async (verb) => {
+    const pt = ptSel.value;
+    const msg = $('cmdMsg');
+    const qs = new URLSearchParams({ role:S.role, operator_id:S.op, reason:'tracer panel' });
+    if (verb === 'command'){
+      const v = $('cmdVal').value;
+      if (v === ''){ msg.className='err'; msg.textContent='Enter a value.'; return; }
+      qs.set('value', v);
+    }
+    msg.className='muted'; msg.textContent = verb + 'ing ' + pt + '...';
+    try {
+      const r = await fetch(`/api/points/${encodeURIComponent(pt)}/${verb}?` + qs, { method:'POST' });
+      const body = await r.json().catch(() => ({}));
+      if (r.status === 403){
+        msg.className='err';
+        msg.textContent = `403 Forbidden — role "${S.role}" may not command. ` +
+                          `Reconnect as technician or admin. (${body.detail || ''})`;
+        return;
+      }
+      if (!r.ok){ msg.className='err'; msg.textContent = r.status + ' — ' + (body.detail || 'rejected'); return; }
+      msg.className='note';
+      msg.textContent = `${pt} ${body.status || verb + 'd'}. Re-run the simulator to see the building respond.`;
+      await refreshPoints(); render();
+    } catch(e){ msg.className='err'; msg.textContent = e.message; }
+  };
+  go.onclick = () => send('command');
+  rel.onclick = () => send('release');
+}
+
+function renderTable(rows){
+  if (!rows.length) return '<p class="muted">No points for this device.</p>';
+  return `<div class="wrap"><table><tr><th>Point</th><th>Value</th><th>Units</th><th>Writable</th></tr>
+    ${rows.map(p => `<tr${p.status === 'alarm' ? ' class="alarm"' : ''}>
+      <td>${esc(p.name)}${p.overridden ? ' <span class="note">(overridden)</span>' : ''}</td>
+      <td>${esc(p.value === null ? '—' : p.value)}</td>
+      <td>${esc(p.units)}</td><td>${p.writable ? 'yes' : ''}</td></tr>`).join('')}</table></div>`;
+}
+
+init();
+</script>

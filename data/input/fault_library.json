@@ -251,5 +251,20 @@
     "correct_equipment": "JACE-OFFICE-01",
     "correct_category": "comms_loss",
     "explanation": "All office points froze at plausible in-range values at the same time while hospital points kept varying. That is not ten simultaneous sensor failures; it points to JACE-OFFICE-01 or its network path going stale."
+  },
+  {
+    "fault_id": "COOLING_TOWER_1_FOULED_FILL",
+    "equipment": "COOLING-TOWER-1",
+    "category": "mechanical_failure",
+    "symptom_text": "Central plant chillers report high load and the condenser water coming back from the tower feels warmer than it should for this time of year.",
+    "affected_points": ["CT1_BASIN_TEMP", "CHILLERHOSP1_CW_ENT_TEMP", "CHILLERHOSP1_PCT_CAPACITY"],
+    "injection": [
+      {"point": "CT1_BASIN_TEMP", "mode": "drift", "rate_per_step": 0.3, "start_step": 2},
+      {"point": "CHILLERHOSP1_CW_ENT_TEMP", "mode": "drift", "rate_per_step": 0.3, "start_step": 2},
+      {"point": "CHILLERHOSP1_PCT_CAPACITY", "mode": "drift", "rate_per_step": 0.6, "start_step": 3}
+    ],
+    "correct_equipment": "COOLING-TOWER-1",
+    "correct_category": "mechanical_failure",
+    "explanation": "CT1_BASIN_TEMP and CHILLERHOSP1_CW_ENT_TEMP rose together while CHILLERHOSP1_PCT_CAPACITY climbed to hold the same CHW output -- classic fouled tower fill: reduced heat rejection forces the chiller to work harder for the same result, the same approach-degradation symptom the study guide describes."
   }
 ]

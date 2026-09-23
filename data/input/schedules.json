@@ -1,0 +1,35 @@
+[
+  {
+    "schedule_id": "OFFICE_OCCUPANCY",
+    "display_name": "Office Occupancy",
+    "type": "BooleanSchedule",
+    "facility": "office",
+    "weekly": {
+      "monday": [["06:00", "18:00"]],
+      "tuesday": [["06:00", "18:00"]],
+      "wednesday": [["06:00", "18:00"]],
+      "thursday": [["06:00", "18:00"]],
+      "friday": [["06:00", "18:00"]],
+      "saturday": [],
+      "sunday": []
+    },
+    "default_value": false,
+    "exceptions": [
+      {"date": "2026-07-04", "value": false, "label": "Independence Day (observed)"}
+    ],
+    "linked_points": [
+      {
+        "point": "RTU1_SAT_SP",
+        "equipment": "RTU-1",
+        "occupied_value": 55.0,
+        "unoccupied_value": 60.0
+      },
+      {
+        "point": "VAV301_TEMP_SP",
+        "equipment": "VAV-301",
+        "occupied_value": 72.0,
+        "unoccupied_value": 78.0
+      }
+    ]
+  }
+]

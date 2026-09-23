@@ -16,6 +16,7 @@ or vendor data anywhere in this repo — and none may ever be added.
 ## Prerequisites
 
 - Python 3.11+ and `pip`
+- Node.js (tested with v22) — `scripts/run-smoke-test.sh` runs a JavaScript self-test
 - Docker with the compose plugin (`docker compose version` should work)
 - A modern browser
 - *(Optional, for the 2AM Call game)* an AI coding agent CLI — Claude
@@ -54,7 +55,11 @@ pip install -r open-source-stack/requirements.txt
 open-source-stack/start-stack.sh      # stop later with stop-stack.sh
 ```
 
-Sanity check any time: `scripts/run-smoke-test.sh`
+Sanity check any time: `scripts/run-smoke-test.sh`. It also runs the
+Building 822 BACnet server's self-test, so it needs **both**
+requirement files installed — `requirements.txt` and
+`open-source-stack/requirements.txt` (for `bacpypes3`) — even if you
+never start the live pipeline.
 
 ---
 

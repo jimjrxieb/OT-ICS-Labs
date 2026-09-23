@@ -1,0 +1,74 @@
+[
+  {
+    "display_name": "RTU-1 Air Handling Unit",
+    "facility": "office",
+    "ord": "station:|slot:/Px/RTU1_Schematic",
+    "px_id": "RTU1_SCHEMATIC",
+    "widgets": [
+      {
+        "kind": "gauge",
+        "label": "OA Damper",
+        "point": "RTU1_OA_DAMPER_POS",
+        "widget_id": "oa_damper",
+        "x": 40,
+        "y": 150
+      },
+      {
+        "kind": "value",
+        "label": "Mixed Air Temp",
+        "point": "RTU1_MA_TEMP",
+        "widget_id": "ma_temp",
+        "x": 230,
+        "y": 150
+      },
+      {
+        "kind": "bool",
+        "label": "Supply Fan",
+        "point": "RTU1_SUPPLY_FAN_CMD",
+        "widget_id": "fan_status",
+        "x": 410,
+        "y": 60
+      },
+      {
+        "kind": "value",
+        "label": "Supply Air Temp",
+        "point": "RTU1_SAT",
+        "widget_id": "sat",
+        "x": 590,
+        "y": 150
+      },
+      {
+        "kind": "value",
+        "label": "SAT Setpoint",
+        "point": "RTU1_SAT_SP",
+        "widget_id": "sat_sp",
+        "x": 590,
+        "y": 220
+      },
+      {
+        "kind": "value",
+        "label": "Zone 301 Temp",
+        "point": "VAV301_TEMP",
+        "widget_id": "vav_temp",
+        "x": 800,
+        "y": 150
+      },
+      {
+        "kind": "value",
+        "label": "Zone 301 Setpoint",
+        "point": "VAV301_TEMP_SP",
+        "widget_id": "vav_sp",
+        "x": 800,
+        "y": 220
+      },
+      {
+        "kind": "gauge",
+        "label": "Reheat Valve",
+        "point": "VAV301_REHEAT_VLV_POS",
+        "widget_id": "reheat",
+        "x": 800,
+        "y": 290
+      }
+    ]
+  }
+]

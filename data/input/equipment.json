@@ -4,36 +4,928 @@
       "id": "hospital",
       "name": "NAS JAX Regional Medical Center",
       "beds": 180,
-      "critical_spaces": ["OR Suite", "ICU", "Isolation Rooms", "Pharmacy", "Imaging", "Sterile Processing", "ED Trauma"]
+      "critical_spaces": [
+        "OR Suite",
+        "ICU",
+        "Isolation Rooms",
+        "Pharmacy",
+        "Imaging",
+        "Sterile Processing",
+        "ED Trauma"
+      ]
     },
     {
       "id": "office",
       "name": "Riverside Office Tower",
       "floors": 8,
-      "critical_spaces": ["Data Closet"]
+      "critical_spaces": [
+        "Data Closet"
+      ]
+    },
+    {
+      "id": "barracks822",
+      "name": "Building 822 (synthetic barracks)",
+      "floors": 3,
+      "wings": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "critical_spaces": []
     }
   ],
   "equipment": [
-    {"id": "AHU-OR-1", "type": "AHU", "serves": "OR Suite", "vendor": "Trane", "controller": "TRN-UC-OR1", "purdue_level": 1, "facility": "hospital"},
-    {"id": "AHU-ICU-1", "type": "AHU", "serves": "ICU", "vendor": "Johnson Controls", "controller": "JCI-FEC-ICU1", "purdue_level": 1, "facility": "hospital"},
-    {"id": "VAV-OR-101", "type": "VAV", "serves": "OR-1", "vendor": "Johnson Controls", "controller": "JCI-VMA-OR101", "purdue_level": 1, "facility": "hospital"},
-    {"id": "RM-ISO-201", "type": "Room Pressure Controller", "serves": "Isolation Room 201", "vendor": "Tridium-integrated", "controller": "JACE-RPC-ISO201", "purdue_level": 1, "facility": "hospital"},
-    {"id": "CHW-PLANT-1", "type": "Chilled Water Plant", "serves": "Campus Loop", "vendor": "Mixed", "controller": "JCI-FEC-CHW1", "purdue_level": 1, "facility": "hospital"},
-    {"id": "HW-PLANT-1", "type": "Hot Water Plant", "serves": "Campus Loop", "vendor": "Mixed", "controller": "JCI-FEC-HW1", "purdue_level": 1, "facility": "hospital"},
-    {"id": "RTU-1", "type": "AHU (rooftop VAV w/ economizer)", "serves": "Office Floors 3-8", "vendor": "Johnson Controls", "controller": "JCI-FEC-RTU1", "purdue_level": 1, "facility": "office"},
-    {"id": "VAV-301", "type": "VAV", "serves": "Floor 3 Open Office", "vendor": "Johnson Controls", "controller": "JCI-VMA-301", "purdue_level": 1, "facility": "office"},
-    {"id": "CHILLER-1", "type": "Air-Cooled Chiller", "serves": "Building Loop", "vendor": "Carrier", "controller": "CAR-CH1", "purdue_level": 1, "facility": "office"},
-    {"id": "BOILER-1", "type": "Condensing Boiler", "serves": "Building Loop", "vendor": "Carrier", "controller": "CAR-BLR1", "purdue_level": 1, "facility": "office"}
+    {
+      "id": "AHU-OR-1",
+      "type": "AHU",
+      "serves": "OR Suite",
+      "vendor": "Trane",
+      "controller": "TRN-UC-OR1",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "AHU-ICU-1",
+      "type": "AHU",
+      "serves": "ICU",
+      "vendor": "Johnson Controls",
+      "controller": "JCI-FEC-ICU1",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "VAV-OR-101",
+      "type": "VAV",
+      "serves": "OR-1",
+      "vendor": "Johnson Controls",
+      "controller": "JCI-VMA-OR101",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "RM-ISO-201",
+      "type": "Room Pressure Controller",
+      "serves": "Isolation Room 201",
+      "vendor": "Tridium-integrated",
+      "controller": "JACE-RPC-ISO201",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "CHW-PLANT-1",
+      "type": "Chilled Water Plant",
+      "serves": "Campus Loop",
+      "vendor": "Mixed",
+      "controller": "JCI-FEC-CHW1",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "CHILLER-HOSP-1",
+      "type": "Water-Cooled Screw Chiller (N+1 plant, ~400 ton)",
+      "serves": "CHW-PLANT-1",
+      "vendor": "Trane",
+      "controller": "TRN-CH1-UC800",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": "CHW-PLANT-1"
+    },
+    {
+      "id": "CHILLER-HOSP-2",
+      "type": "Water-Cooled Screw Chiller (N+1 plant, ~400 ton)",
+      "serves": "CHW-PLANT-1",
+      "vendor": "Trane",
+      "controller": "TRN-CH2-UC800",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": "CHW-PLANT-1"
+    },
+    {
+      "id": "CWP-1",
+      "type": "Condenser Water Pump",
+      "serves": "CHILLER-HOSP-1",
+      "vendor": "Bell & Gossett",
+      "controller": "TRN-CH1-UC800",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": "CHILLER-HOSP-1"
+    },
+    {
+      "id": "CWP-2",
+      "type": "Condenser Water Pump",
+      "serves": "CHILLER-HOSP-2",
+      "vendor": "Bell & Gossett",
+      "controller": "TRN-CH2-UC800",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": "CHILLER-HOSP-2"
+    },
+    {
+      "id": "COOLING-TOWER-1",
+      "type": "Cooling Tower (2-cell, open circuit, shared basin)",
+      "serves": "CHW-PLANT-1",
+      "vendor": "BAC",
+      "controller": "JCI-FEC-CHW1",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": "CHW-PLANT-1"
+    },
+    {
+      "id": "HW-PLANT-1",
+      "type": "Hot Water Plant",
+      "serves": "Campus Loop",
+      "vendor": "Mixed",
+      "controller": "JCI-FEC-HW1",
+      "purdue_level": 1,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "RTU-1",
+      "type": "AHU (rooftop VAV w/ economizer)",
+      "serves": "Office Floors 3-8",
+      "vendor": "Johnson Controls",
+      "controller": "JCI-FEC-RTU1",
+      "purdue_level": 1,
+      "facility": "office",
+      "parent": null
+    },
+    {
+      "id": "VAV-301",
+      "type": "VAV",
+      "serves": "Floor 3 Open Office",
+      "vendor": "Johnson Controls",
+      "controller": "JCI-VMA-301",
+      "purdue_level": 1,
+      "facility": "office",
+      "parent": null
+    },
+    {
+      "id": "CHILLER-1",
+      "type": "Air-Cooled Chiller",
+      "serves": "Building Loop",
+      "vendor": "Carrier",
+      "controller": "CAR-CH1",
+      "purdue_level": 1,
+      "facility": "office",
+      "parent": null
+    },
+    {
+      "id": "BOILER-1",
+      "type": "Condensing Boiler",
+      "serves": "Building Loop",
+      "vendor": "Carrier",
+      "controller": "CAR-BLR1",
+      "purdue_level": 1,
+      "facility": "office",
+      "parent": null
+    },
+    {
+      "id": "MAU-01",
+      "type": "Makeup Air Unit",
+      "serves": "Wing A Floor 1",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-01",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "MAU-02",
+      "type": "Makeup Air Unit",
+      "serves": "Wing A Floor 2",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-02",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "MAU-03",
+      "type": "Makeup Air Unit",
+      "serves": "Wing A Floor 3",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-03",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "MAU-04",
+      "type": "Makeup Air Unit",
+      "serves": "Wing B Floor 1",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-04",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "MAU-05",
+      "type": "Makeup Air Unit",
+      "serves": "Wing B Floor 2",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-05",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "MAU-06",
+      "type": "Makeup Air Unit",
+      "serves": "Wing B Floor 3",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-06",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "MAU-07",
+      "type": "Makeup Air Unit",
+      "serves": "Wing C Floor 1",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-07",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "MAU-08",
+      "type": "Makeup Air Unit",
+      "serves": "Wing C Floor 2",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-08",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "MAU-09",
+      "type": "Makeup Air Unit",
+      "serves": "Wing C Floor 3",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-09",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "MAU-10",
+      "type": "Makeup Air Unit",
+      "serves": "Wing D Floor 1",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-10",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "MAU-11",
+      "type": "Makeup Air Unit",
+      "serves": "Wing D Floor 2",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-11",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "MAU-12",
+      "type": "Makeup Air Unit",
+      "serves": "Wing D Floor 3",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-12",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "MAU-13",
+      "type": "Makeup Air Unit",
+      "serves": "Lobby",
+      "vendor": "Trane",
+      "controller": "UC400-MAU-13",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-A"
+    },
+    {
+      "id": "UC-FCU-A101",
+      "type": "Fan Coil Unit",
+      "serves": "Room A101",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A102",
+      "type": "Fan Coil Unit",
+      "serves": "Room A102",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A102",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A103",
+      "type": "Fan Coil Unit",
+      "serves": "Room A103",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A103",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A201",
+      "type": "Fan Coil Unit",
+      "serves": "Room A201",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A202",
+      "type": "Fan Coil Unit",
+      "serves": "Room A202",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A202",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A203",
+      "type": "Fan Coil Unit",
+      "serves": "Room A203",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A203",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A301",
+      "type": "Fan Coil Unit",
+      "serves": "Room A301",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A302",
+      "type": "Fan Coil Unit",
+      "serves": "Room A302",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A302",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-A303",
+      "type": "Fan Coil Unit",
+      "serves": "Room A303",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A303",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B101",
+      "type": "Fan Coil Unit",
+      "serves": "Room B101",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B102",
+      "type": "Fan Coil Unit",
+      "serves": "Room B102",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B102",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B103",
+      "type": "Fan Coil Unit",
+      "serves": "Room B103",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B103",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B201",
+      "type": "Fan Coil Unit",
+      "serves": "Room B201",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B202",
+      "type": "Fan Coil Unit",
+      "serves": "Room B202",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B202",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B203",
+      "type": "Fan Coil Unit",
+      "serves": "Room B203",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B203",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B301",
+      "type": "Fan Coil Unit",
+      "serves": "Room B301",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B302",
+      "type": "Fan Coil Unit",
+      "serves": "Room B302",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B302",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-B303",
+      "type": "Fan Coil Unit",
+      "serves": "Room B303",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B303",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "UC-FCU-C101",
+      "type": "Fan Coil Unit",
+      "serves": "Room C101",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C102",
+      "type": "Fan Coil Unit",
+      "serves": "Room C102",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C102",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C103",
+      "type": "Fan Coil Unit",
+      "serves": "Room C103",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C103",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C201",
+      "type": "Fan Coil Unit",
+      "serves": "Room C201",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C202",
+      "type": "Fan Coil Unit",
+      "serves": "Room C202",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C202",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C203",
+      "type": "Fan Coil Unit",
+      "serves": "Room C203",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C203",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C301",
+      "type": "Fan Coil Unit",
+      "serves": "Room C301",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C302",
+      "type": "Fan Coil Unit",
+      "serves": "Room C302",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C302",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-C303",
+      "type": "Fan Coil Unit",
+      "serves": "Room C303",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C303",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D101",
+      "type": "Fan Coil Unit",
+      "serves": "Room D101",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D102",
+      "type": "Fan Coil Unit",
+      "serves": "Room D102",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D102",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D103",
+      "type": "Fan Coil Unit",
+      "serves": "Room D103",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D103",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D201",
+      "type": "Fan Coil Unit",
+      "serves": "Room D201",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D202",
+      "type": "Fan Coil Unit",
+      "serves": "Room D202",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D202",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D203",
+      "type": "Fan Coil Unit",
+      "serves": "Room D203",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D203",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D301",
+      "type": "Fan Coil Unit",
+      "serves": "Room D301",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D302",
+      "type": "Fan Coil Unit",
+      "serves": "Room D302",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D302",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "UC-FCU-D303",
+      "type": "Fan Coil Unit",
+      "serves": "Room D303",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D303",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "HALL-A1",
+      "type": "Hallway Sensor",
+      "serves": "Wing A Floor 1 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "HALL-A2",
+      "type": "Hallway Sensor",
+      "serves": "Wing A Floor 2 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "HALL-A3",
+      "type": "Hallway Sensor",
+      "serves": "Wing A Floor 3 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-A301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "HALL-B1",
+      "type": "Hallway Sensor",
+      "serves": "Wing B Floor 1 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "HALL-B2",
+      "type": "Hallway Sensor",
+      "serves": "Wing B Floor 2 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "HALL-B3",
+      "type": "Hallway Sensor",
+      "serves": "Wing B Floor 3 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-B301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-B"
+    },
+    {
+      "id": "HALL-C1",
+      "type": "Hallway Sensor",
+      "serves": "Wing C Floor 1 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "HALL-C2",
+      "type": "Hallway Sensor",
+      "serves": "Wing C Floor 2 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "HALL-C3",
+      "type": "Hallway Sensor",
+      "serves": "Wing C Floor 3 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-C301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "HALL-D1",
+      "type": "Hallway Sensor",
+      "serves": "Wing D Floor 1 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D101",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "HALL-D2",
+      "type": "Hallway Sensor",
+      "serves": "Wing D Floor 2 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D201",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "HALL-D3",
+      "type": "Hallway Sensor",
+      "serves": "Wing D Floor 3 Corridor",
+      "vendor": "Trane",
+      "controller": "UC-FCU-D301",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-02-B"
+    },
+    {
+      "id": "CHW-822",
+      "type": "CHW Service Entrance",
+      "serves": "Building 822",
+      "vendor": "Mixed",
+      "controller": "UC400-CHW-822",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": "MSTP-01-A"
+    },
+    {
+      "id": "CHILLER-RTAC-822",
+      "type": "Air-Cooled Chiller (RTAC, ~155 ton)",
+      "serves": "Campus CHW Loop",
+      "vendor": "Trane",
+      "controller": "unit-mounted",
+      "purdue_level": 1,
+      "facility": "barracks822",
+      "parent": null,
+      "note": "Off-tree. No BACnet integration to SC-822. Local display only.",
+      "serial": "SYNTHETIC-822-0001",
+      "reference": "RTAC-SVX01M-EN (public product literature)"
+    }
   ],
   "supervisory": [
-    {"id": "MET-SNE-01", "type": "Metasys supervisory engine", "vendor": "Johnson Controls", "purdue_level": 2, "facility": "hospital"},
-    {"id": "TRN-SC-01", "type": "Tracer SC+", "vendor": "Trane", "purdue_level": 2, "facility": "hospital"},
-    {"id": "JACE-OT-01", "type": "Niagara JACE", "vendor": "Tridium", "purdue_level": 2, "facility": "hospital"},
-    {"id": "JACE-OFFICE-01", "type": "Niagara JACE", "vendor": "Tridium", "purdue_level": 2, "facility": "office"}
+    {
+      "id": "MET-SNE-01",
+      "type": "Metasys supervisory engine",
+      "vendor": "Johnson Controls",
+      "purdue_level": 2,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "TRN-SC-01",
+      "type": "Tracer SC+",
+      "vendor": "Trane",
+      "purdue_level": 2,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "JACE-OT-01",
+      "type": "Niagara JACE",
+      "vendor": "Tridium",
+      "purdue_level": 2,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "JACE-OFFICE-01",
+      "type": "Niagara JACE",
+      "vendor": "Tridium",
+      "purdue_level": 2,
+      "facility": "office",
+      "parent": null
+    },
+    {
+      "id": "SC-822-01",
+      "type": "Tracer SC+",
+      "vendor": "Trane",
+      "purdue_level": 2,
+      "facility": "barracks822",
+      "parent": "ETH-822"
+    },
+    {
+      "id": "SC-822-02",
+      "type": "Tracer SC+",
+      "vendor": "Trane",
+      "purdue_level": 2,
+      "facility": "barracks822",
+      "parent": "ETH-822"
+    }
   ],
   "front_end": [
-    {"id": "MET-ADS-01", "type": "Metasys server", "vendor": "Johnson Controls", "purdue_level": 3, "facility": "hospital"},
-    {"id": "N4-SUP-01", "type": "Niagara Supervisor", "vendor": "Tridium", "purdue_level": 3, "facility": "portfolio"},
-    {"id": "BAS-OWS-01", "type": "Operator workstation", "vendor": "Mixed", "purdue_level": 3, "facility": "hospital"}
+    {
+      "id": "MET-ADS-01",
+      "type": "Metasys server",
+      "vendor": "Johnson Controls",
+      "purdue_level": 3,
+      "facility": "hospital",
+      "parent": null
+    },
+    {
+      "id": "N4-SUP-01",
+      "type": "Niagara Supervisor",
+      "vendor": "Tridium",
+      "purdue_level": 3,
+      "facility": "portfolio",
+      "parent": null
+    },
+    {
+      "id": "BAS-OWS-01",
+      "type": "Operator workstation",
+      "vendor": "Mixed",
+      "purdue_level": 3,
+      "facility": "hospital",
+      "parent": null
+    }
+  ],
+  "networks": [
+    {
+      "id": "ETH-822",
+      "type": "ethernet",
+      "facility": "barracks822",
+      "parent": null
+    },
+    {
+      "id": "MSTP-01-A",
+      "type": "bacnet_mstp",
+      "facility": "barracks822",
+      "parent": "SC-822-01"
+    },
+    {
+      "id": "MSTP-01-B",
+      "type": "bacnet_mstp",
+      "facility": "barracks822",
+      "parent": "SC-822-01"
+    },
+    {
+      "id": "MSTP-02-A",
+      "type": "bacnet_mstp",
+      "facility": "barracks822",
+      "parent": "SC-822-02"
+    },
+    {
+      "id": "MSTP-02-B",
+      "type": "bacnet_mstp",
+      "facility": "barracks822",
+      "parent": "SC-822-02"
+    }
   ]
 }

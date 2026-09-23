@@ -1,0 +1,47 @@
+[
+  {
+    "station_id": "N4-SUP-01",
+    "display_name": "Portfolio Supervisor",
+    "role": "Supervisor",
+    "facility": "portfolio",
+    "host": "127.0.0.1",
+    "niagara_version": "N4.13.1.16 (synthetic)",
+    "fox_port": 1911,
+    "http_port": 8001,
+    "license": {
+      "vendor": "Synthetic Lab License Server",
+      "features": ["BacnetNetwork", "NiagaraNetwork", "Schedule", "WireSheet", "History", "Alarm"],
+      "expires": "2099-12-31"
+    }
+  },
+  {
+    "station_id": "JACE-OT-01",
+    "display_name": "Hospital JACE",
+    "role": "JACE",
+    "facility": "hospital",
+    "host": "127.0.0.1 (synthetic field segment)",
+    "niagara_version": "N4.13.1.16 (synthetic)",
+    "fox_port": 1912,
+    "http_port": null,
+    "license": {
+      "vendor": "Synthetic Lab License Server",
+      "features": ["BacnetNetwork", "Schedule", "WireSheet", "History", "Alarm"],
+      "expires": "2099-12-31"
+    }
+  },
+  {
+    "station_id": "JACE-OFFICE-01",
+    "display_name": "Office JACE",
+    "role": "JACE",
+    "facility": "office",
+    "host": "127.0.0.1 (synthetic field segment)",
+    "niagara_version": "N4.13.1.16 (synthetic)",
+    "fox_port": 1913,
+    "http_port": null,
+    "license": {
+      "vendor": "Synthetic Lab License Server",
+      "features": ["BacnetNetwork", "Schedule", "WireSheet", "History", "Alarm"],
+      "expires": "2099-12-31"
+    }
+  }
+]

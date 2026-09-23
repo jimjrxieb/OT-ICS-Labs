@@ -1,0 +1,223 @@
+[
+  {
+    "blocks": [
+      {
+        "block_id": "OccupancySchedule",
+        "config": {
+          "schedule_id": "OFFICE_OCCUPANCY"
+        },
+        "type": "ScheduleRef",
+        "x": 30,
+        "y": 90
+      },
+      {
+        "block_id": "RTU1_OccupiedSP",
+        "config": {
+          "value": 55.0
+        },
+        "type": "Constant",
+        "x": 250,
+        "y": 20
+      },
+      {
+        "block_id": "RTU1_UnoccupiedSP",
+        "config": {
+          "value": 60.0
+        },
+        "type": "Constant",
+        "x": 250,
+        "y": 120
+      },
+      {
+        "block_id": "RTU1_SetbackSelect",
+        "type": "Select",
+        "x": 470,
+        "y": 60
+      },
+      {
+        "block_id": "RTU1_SAT_SP",
+        "config": {
+          "point": "RTU1_SAT_SP"
+        },
+        "type": "PointWriteRef",
+        "x": 700,
+        "y": 70
+      },
+      {
+        "block_id": "VAV301_OccupiedSP",
+        "config": {
+          "value": 72.0
+        },
+        "type": "Constant",
+        "x": 250,
+        "y": 260
+      },
+      {
+        "block_id": "VAV301_UnoccupiedSP",
+        "config": {
+          "value": 78.0
+        },
+        "type": "Constant",
+        "x": 250,
+        "y": 360
+      },
+      {
+        "block_id": "VAV301_SetbackSelect",
+        "type": "Select",
+        "x": 470,
+        "y": 300
+      },
+      {
+        "block_id": "VAV301_TEMP_SP",
+        "config": {
+          "point": "VAV301_TEMP_SP"
+        },
+        "type": "PointWriteRef",
+        "x": 700,
+        "y": 310
+      }
+    ],
+    "description": "The Office Occupancy schedule's effective output selects between the occupied and unoccupied setpoint for each linked point -- the same logic the Schedule tab's linked-points table reports, drawn as blocks and links instead of a lookup table.",
+    "display_name": "RTU-1 / VAV-301 Occupancy Setback",
+    "links": [
+      {
+        "from": "OccupancySchedule",
+        "from_slot": "out",
+        "to": "RTU1_SetbackSelect",
+        "to_slot": "selector"
+      },
+      {
+        "from": "RTU1_OccupiedSP",
+        "from_slot": "out",
+        "to": "RTU1_SetbackSelect",
+        "to_slot": "whenTrue"
+      },
+      {
+        "from": "RTU1_UnoccupiedSP",
+        "from_slot": "out",
+        "to": "RTU1_SetbackSelect",
+        "to_slot": "whenFalse"
+      },
+      {
+        "from": "RTU1_SetbackSelect",
+        "from_slot": "out",
+        "to": "RTU1_SAT_SP",
+        "to_slot": "in"
+      },
+      {
+        "from": "OccupancySchedule",
+        "from_slot": "out",
+        "to": "VAV301_SetbackSelect",
+        "to_slot": "selector"
+      },
+      {
+        "from": "VAV301_OccupiedSP",
+        "from_slot": "out",
+        "to": "VAV301_SetbackSelect",
+        "to_slot": "whenTrue"
+      },
+      {
+        "from": "VAV301_UnoccupiedSP",
+        "from_slot": "out",
+        "to": "VAV301_SetbackSelect",
+        "to_slot": "whenFalse"
+      },
+      {
+        "from": "VAV301_SetbackSelect",
+        "from_slot": "out",
+        "to": "VAV301_TEMP_SP",
+        "to_slot": "in"
+      }
+    ],
+    "ord": "station:|slot:/Drivers/JACENetwork/JACE_OFFICE_01/WireSheet/OccupancySetback",
+    "wiresheet_id": "RTU1_OCCUPANCY_SETBACK"
+  },
+  {
+    "blocks": [
+      {
+        "block_id": "PressureReading",
+        "config": {
+          "point": "ISO201_PRESSURE"
+        },
+        "type": "PointRef",
+        "x": 30,
+        "y": 20
+      },
+      {
+        "block_id": "PressureHighLimit",
+        "config": {
+          "value": -0.01
+        },
+        "type": "Constant",
+        "x": 30,
+        "y": 120
+      },
+      {
+        "block_id": "PressureExcursion",
+        "config": {
+          "op": ">"
+        },
+        "type": "Compare",
+        "x": 260,
+        "y": 60
+      },
+      {
+        "block_id": "ExhaustFanCmd",
+        "config": {
+          "point": "ISO201_EXH_CMD"
+        },
+        "type": "PointRef",
+        "x": 30,
+        "y": 220
+      },
+      {
+        "block_id": "ExhaustFanOff",
+        "type": "Not",
+        "x": 260,
+        "y": 220
+      },
+      {
+        "block_id": "InterlockShouldTrip",
+        "type": "And",
+        "x": 480,
+        "y": 140
+      }
+    ],
+    "description": "Read-only interlock logic: flags a positive-pressure excursion while the exhaust fan is not commanded on. Informational only -- this Wire Sheet does not write to any point; life-safety points in this lab are never actuated by a demo program.",
+    "display_name": "ISO-201 Isolation Room Pressure Interlock (informational)",
+    "links": [
+      {
+        "from": "PressureReading",
+        "from_slot": "out",
+        "to": "PressureExcursion",
+        "to_slot": "a"
+      },
+      {
+        "from": "PressureHighLimit",
+        "from_slot": "out",
+        "to": "PressureExcursion",
+        "to_slot": "b"
+      },
+      {
+        "from": "ExhaustFanCmd",
+        "from_slot": "out",
+        "to": "ExhaustFanOff",
+        "to_slot": "a"
+      },
+      {
+        "from": "PressureExcursion",
+        "from_slot": "out",
+        "to": "InterlockShouldTrip",
+        "to_slot": "a"
+      },
+      {
+        "from": "ExhaustFanOff",
+        "from_slot": "out",
+        "to": "InterlockShouldTrip",
+        "to_slot": "b"
+      }
+    ],
+    "ord": "station:|slot:/Drivers/BacnetNetwork/JACE_RPC_ISO201/WireSheet/PressureInterlock",
+    "wiresheet_id": "ISO201_PRESSURE_INTERLOCK"
+  }
+]
