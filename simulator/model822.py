@@ -426,6 +426,14 @@ def ground_truth_snapshot(state: dict[str, Any]) -> dict[str, float]:
     for mau, st in state.get("mau", {}).items():
         out[f"{mau}_CHW_VLV_PHYSICAL"] = round(
             float(st.get("physical_valve_pct", st.get("valve_pct", 0.0))), 1)
+    # S-001 hydronic plant: gauge, clamp meter, and eyes only -- none are BAS points.
+    chw, loop = state.get("chw", {}), state.get("_loop", {})
+    out["CHW822_LOOP_PSIG_PHYSICAL"] = round(float(chw.get("loop_psig", TUNING["LOOP_FILL_PSIG"])), 1)
+    out["CHW822_P1_AMPS_PHYSICAL"] = round(float(loop.get("p1_amps", 0.0)), 1)
+    out["CHW822_P2_AMPS_PHYSICAL"] = round(float(loop.get("p2_amps", 0.0)), 1)
+    out["CHW822_P1_TDV_LEAK_GPM_PHYSICAL"] = round(float(loop.get("leak_gpm", 0.0)), 2)
+    out["CHW822_P1_TDV_FAILED_PHYSICAL"] = 1.0 if loop.get("p1_tdv_failed") else 0.0
+    out["PUMPROOM_WATER_GAL_PHYSICAL"] = round(float(state.get("plant_room", {}).get("water_gal", 0.0)), 1)
     return out
 
 
@@ -1019,6 +1027,17 @@ def self_test() -> int:
         st, pts = step_822(st, i)
     assert not st["chiller"]["tripped"] and pts["RTAC822_PCT_CAPACITY"] > 0.0
     assert st["chiller"]["resets"] == 2
+
+    # --- S-001 field-only truth ---------------------------------------------------
+    st = cold_start_state()
+    for i in range(5):
+        st, pts = step_822(st, i)
+    truth = ground_truth_snapshot(st)
+    assert truth["CHW822_LOOP_PSIG_PHYSICAL"] == TUNING["LOOP_FILL_PSIG"]
+    assert truth["CHW822_P1_AMPS_PHYSICAL"] == TUNING["PUMP_FLA_AMPS"] and truth["CHW822_P2_AMPS_PHYSICAL"] == 0.0
+    assert truth["CHW822_P1_TDV_LEAK_GPM_PHYSICAL"] == 0.0 and truth["CHW822_P1_TDV_FAILED_PHYSICAL"] == 0.0
+    assert truth["PUMPROOM_WATER_GAL_PHYSICAL"] == 0.0
+    assert not any(k in pts for k in truth), "field-only values must never be BAS points"
 
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0

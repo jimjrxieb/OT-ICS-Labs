@@ -17,6 +17,7 @@ test -s data/output/scenario-summary.md
 python3 simulator/psychro.py --self-test
 python3 simulator/model822.py --self-test
 python3 scripts/model822-regression.py --check
+python3 scripts/field-verify.py --self-test
 python3 scripts/gen-822-inventory.py --self-test
 python3 frontend/px_pages.py --self-test
 python3 frontend/wiresheets.py --self-test
