@@ -941,6 +941,15 @@ function renderWireSheetSvg(ws) {
   return svg;
 }
 
+// Human-readable text for a FastAPI error `detail`: our validators return
+// {errors: [...]}, role checks return a plain string, anything else is JSON.
+function apiErrorText(detail) {
+  if (detail && Array.isArray(detail.errors)) return detail.errors.join('; ');
+  if (typeof detail === 'string') return detail;
+  if (detail === undefined || detail === null) return 'request failed';
+  return JSON.stringify(detail);
+}
+
 // Which config input the Add Block form shows for a block type (null: none).
 function wireSheetConfigFieldFor(type) {
   const fields = {
@@ -1047,7 +1056,7 @@ async function createWireSheet() {
     const data = await res.json();
     if (!res.ok) {
       status.style.color = '#c62828';
-      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      status.textContent = apiErrorText(data.detail);
       return;
     }
     status.style.color = '#2e7d32';
@@ -1123,7 +1132,7 @@ async function addWireSheetBlock() {
     const data = await res.json();
     if (!res.ok) {
       status.style.color = '#c62828';
-      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      status.textContent = apiErrorText(data.detail);
       return;
     }
     status.style.color = '#2e7d32';
@@ -1162,7 +1171,7 @@ async function addWireSheetLink() {
     const data = await res.json();
     if (!res.ok) {
       status.style.color = '#c62828';
-      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      status.textContent = apiErrorText(data.detail);
       return;
     }
     status.style.color = '#2e7d32';
@@ -1312,7 +1321,7 @@ async function createPxPage() {
     const data = await res.json();
     if (!res.ok) {
       status.style.color = '#c62828';
-      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      status.textContent = apiErrorText(data.detail);
       return;
     }
     status.style.color = '#2e7d32';
@@ -1353,7 +1362,7 @@ async function addPxWidget() {
     const data = await res.json();
     if (!res.ok) {
       status.style.color = '#c62828';
-      status.textContent = (data.detail && data.detail.errors) ? data.detail.errors.join('; ') : JSON.stringify(data.detail);
+      status.textContent = apiErrorText(data.detail);
       return;
     }
     status.style.color = '#2e7d32';

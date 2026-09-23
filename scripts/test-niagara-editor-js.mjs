@@ -14,7 +14,7 @@ const HTML_PATH = path.join(__dirname, '..', 'frontend', 'static', 'niagara.html
 
 function extractFunction(source, name) {
   // Naive brace counter: no guard against '{'/'}' occurring inside a
-  // string or template literal. Fine for the current 4 target functions
+  // string or template literal. Fine for the current 5 target functions
   // (no such literals in their bodies) -- revisit if reused on functions
   // that contain brace characters inside strings/templates.
   const marker = 'function ' + name + '(';
@@ -43,13 +43,13 @@ if (!scriptMatch) {
 }
 const scriptSource = scriptMatch[1];
 
-const functionNames = ['pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
+const functionNames = ['apiErrorText', 'pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
 const extracted = functionNames.map((name) => extractFunction(scriptSource, name)).join('\n\n');
 
 const sandbox = new Function(
-  extracted + '\nreturn {pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
+  extracted + '\nreturn {apiErrorText, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
 );
-const { pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
+const { apiErrorText, pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
 
 let failures = 0;
 
@@ -151,6 +151,15 @@ check(
   'wireSheetLinkFromForm builds a link with from/to/slot fields',
   wireSheetLinkFromForm({ from_block: 'A', from_slot: 'out', to_block: 'B', to_slot: 'a' }),
   { from: 'A', from_slot: 'out', to: 'B', to_slot: 'a' }
+);
+
+check(
+  'apiErrorText joins validation errors, shows string details bare, falls back to JSON',
+  [apiErrorText({ errors: ['a bad', 'b bad'] }),
+   apiErrorText("Role 'viewer' is not authorized"),
+   apiErrorText([{ loc: ['body'], msg: 'field required' }]),
+   apiErrorText(undefined)],
+  ['a bad; b bad', "Role 'viewer' is not authorized", '[{"loc":["body"],"msg":"field required"}]', 'request failed']
 );
 
 if (failures > 0) {
