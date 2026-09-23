@@ -14,7 +14,7 @@ const HTML_PATH = path.join(__dirname, '..', 'frontend', 'static', 'niagara.html
 
 function extractFunction(source, name) {
   // Naive brace counter: no guard against '{'/'}' occurring inside a
-  // string or template literal. Fine for the current 3 target functions
+  // string or template literal. Fine for the current 4 target functions
   // (no such literals in their bodies) -- revisit if reused on functions
   // that contain brace characters inside strings/templates.
   const marker = 'function ' + name + '(';
@@ -43,13 +43,13 @@ if (!scriptMatch) {
 }
 const scriptSource = scriptMatch[1];
 
-const functionNames = ['pxWidgetFromForm', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
+const functionNames = ['pxWidgetFromForm', 'wireSheetConfigFieldFor', 'wireSheetBlockFromForm', 'wireSheetLinkFromForm'];
 const extracted = functionNames.map((name) => extractFunction(scriptSource, name)).join('\n\n');
 
 const sandbox = new Function(
-  extracted + '\nreturn {pxWidgetFromForm, wireSheetBlockFromForm, wireSheetLinkFromForm};'
+  extracted + '\nreturn {pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm};'
 );
-const { pxWidgetFromForm, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
+const { pxWidgetFromForm, wireSheetConfigFieldFor, wireSheetBlockFromForm, wireSheetLinkFromForm } = sandbox();
 
 let failures = 0;
 
@@ -74,6 +74,77 @@ check(
   'wireSheetBlockFromForm builds a block with empty config and parsed coordinates',
   wireSheetBlockFromForm({ block_id: 'B1', type: 'Not', x: '10', y: '20' }),
   { block_id: 'B1', type: 'Not', config: {}, x: 10, y: 20 }
+);
+
+// Layer 1.5: config is built from the per-type config inputs, and inputs
+// that don't belong to the chosen type are ignored.
+const allConfigInputs = { config_value: '55', config_point: 'RTU1_SAT', config_schedule: 'OFFICE_OCCUPANCY', config_op: '<=' };
+
+check(
+  'wireSheetBlockFromForm: Constant parses a numeric value',
+  wireSheetBlockFromForm({ block_id: 'C1', type: 'Constant', x: '0', y: '0', ...allConfigInputs }),
+  { block_id: 'C1', type: 'Constant', config: { value: 55 }, x: 0, y: 0 }
+);
+
+check(
+  'wireSheetBlockFromForm: Constant parses negative decimals',
+  wireSheetBlockFromForm({ block_id: 'C1', type: 'Constant', x: '0', y: '0', config_value: ' -0.01 ' }).config,
+  { value: -0.01 }
+);
+
+check(
+  'wireSheetBlockFromForm: Constant parses true/false as booleans',
+  [wireSheetBlockFromForm({ block_id: 'C1', type: 'Constant', x: '0', y: '0', config_value: 'true' }).config,
+   wireSheetBlockFromForm({ block_id: 'C1', type: 'Constant', x: '0', y: '0', config_value: 'FALSE' }).config],
+  [{ value: true }, { value: false }]
+);
+
+check(
+  'wireSheetBlockFromForm: Constant passes non-numeric text through for the server to reject by name',
+  wireSheetBlockFromForm({ block_id: 'C1', type: 'Constant', x: '0', y: '0', config_value: 'abc' }).config,
+  { value: 'abc' }
+);
+
+check(
+  'wireSheetBlockFromForm: Constant with a blank value omits the key (server reports it missing)',
+  wireSheetBlockFromForm({ block_id: 'C1', type: 'Constant', x: '0', y: '0', config_value: '  ' }).config,
+  {}
+);
+
+check(
+  'wireSheetBlockFromForm: PointRef takes the selected point',
+  wireSheetBlockFromForm({ block_id: 'P1', type: 'PointRef', x: '0', y: '0', ...allConfigInputs }).config,
+  { point: 'RTU1_SAT' }
+);
+
+check(
+  'wireSheetBlockFromForm: PointWriteRef takes the selected point',
+  wireSheetBlockFromForm({ block_id: 'W1', type: 'PointWriteRef', x: '0', y: '0', ...allConfigInputs }).config,
+  { point: 'RTU1_SAT' }
+);
+
+check(
+  'wireSheetBlockFromForm: ScheduleRef takes the selected schedule',
+  wireSheetBlockFromForm({ block_id: 'S1', type: 'ScheduleRef', x: '0', y: '0', ...allConfigInputs }).config,
+  { schedule_id: 'OFFICE_OCCUPANCY' }
+);
+
+check(
+  'wireSheetBlockFromForm: Compare takes the selected operator',
+  wireSheetBlockFromForm({ block_id: 'CMP', type: 'Compare', x: '0', y: '0', ...allConfigInputs }).config,
+  { op: '<=' }
+);
+
+check(
+  'wireSheetBlockFromForm: config-less types ignore stray config inputs',
+  wireSheetBlockFromForm({ block_id: 'N1', type: 'Not', x: '0', y: '0', ...allConfigInputs }).config,
+  {}
+);
+
+check(
+  'wireSheetConfigFieldFor names the one config input each type shows',
+  ['Constant', 'PointRef', 'PointWriteRef', 'ScheduleRef', 'Compare', 'Select', 'And'].map(wireSheetConfigFieldFor),
+  ['value', 'point', 'point', 'schedule', 'op', null, null]
 );
 
 check(

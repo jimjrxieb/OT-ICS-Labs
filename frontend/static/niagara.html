@@ -300,10 +300,20 @@ code.ord { font-family: monospace; font-size: 0.78rem; color: #2d4a1e; backgroun
         <div id="ws-create-status" style="font-size:0.78rem;margin-bottom:10px;"></div>
 
         <div class="section-title">Add Block</div>
-        <!-- Layer 1 note: block types needing config (Constant, ScheduleRef, PointRef, PointWriteRef) will fail server-side validation until a config-field UI ships (Layer 1.5/2). -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <input id="ws-block-id" placeholder="block_id" style="width:120px;">
-          <select id="ws-block-type"></select>
+          <select id="ws-block-type" onchange="updateWireSheetConfigField()"></select>
+          <!-- One config input per block type; updateWireSheetConfigField() shows only the one wireSheetConfigFieldFor() names. -->
+          <input id="ws-cfg-value" placeholder="value (number or true/false)" title="Constant value" style="width:190px;display:none;">
+          <select id="ws-cfg-point" title="Point" style="display:none;"></select>
+          <select id="ws-cfg-schedule" title="Schedule" style="display:none;"></select>
+          <select id="ws-cfg-op" title="Compare operator" style="display:none;">
+            <option value="&gt;">a &gt; b</option>
+            <option value="&lt;">a &lt; b</option>
+            <option value="&gt;=">a &gt;= b</option>
+            <option value="&lt;=">a &lt;= b</option>
+            <option value="==">a == b</option>
+          </select>
           <input id="ws-block-x" placeholder="x" type="number" value="40" style="width:70px;">
           <input id="ws-block-y" placeholder="y" type="number" value="40" style="width:70px;">
           <button onclick="addWireSheetBlock()">Add Block</button>
@@ -931,14 +941,62 @@ function renderWireSheetSvg(ws) {
   return svg;
 }
 
+// Which config input the Add Block form shows for a block type (null: none).
+function wireSheetConfigFieldFor(type) {
+  const fields = {
+    Constant: 'value',
+    PointRef: 'point',
+    PointWriteRef: 'point',
+    ScheduleRef: 'schedule',
+    Compare: 'op',
+  };
+  return fields[type] || null;
+}
+
 function wireSheetBlockFromForm(values) {
+  const config = {};
+  const field = wireSheetConfigFieldFor(values.type);
+  if (field === 'value') {
+    // Numbers and true/false become real JSON types. Anything else is sent
+    // as typed so the server rejects it with an error naming the bad value;
+    // blank is left out so the server reports the missing key.
+    const raw = String(values.config_value || '').trim();
+    const lower = raw.toLowerCase();
+    if (lower === 'true' || lower === 'false') {
+      config.value = lower === 'true';
+    } else if (raw !== '' && Number.isFinite(Number(raw))) {
+      config.value = Number(raw);
+    } else if (raw !== '') {
+      config.value = raw;
+    }
+  } else if (field === 'point') {
+    config.point = values.config_point;
+  } else if (field === 'schedule') {
+    config.schedule_id = values.config_schedule;
+  } else if (field === 'op') {
+    config.op = values.config_op;
+  }
   return {
     block_id: values.block_id,
     type: values.type,
-    config: {},
+    config: config,
     x: parseInt(values.x, 10),
     y: parseInt(values.y, 10),
   };
+}
+
+const WS_CONFIG_INPUT_IDS = {
+  value: 'ws-cfg-value',
+  point: 'ws-cfg-point',
+  schedule: 'ws-cfg-schedule',
+  op: 'ws-cfg-op',
+};
+
+function updateWireSheetConfigField() {
+  const field = wireSheetConfigFieldFor(document.getElementById('ws-block-type').value);
+  Object.entries(WS_CONFIG_INPUT_IDS).forEach(([name, id]) => {
+    document.getElementById(id).style.display = name === field ? '' : 'none';
+  });
 }
 
 function wireSheetLinkFromForm(values) {
@@ -960,6 +1018,21 @@ async function populateWireSheetBlockTypeOptions() {
   wsBlockTypes = data.block_types;
   const select = document.getElementById('ws-block-type');
   select.innerHTML = Object.keys(wsBlockTypes).map(t => '<option value="' + t + '">' + t + '</option>').join('');
+
+  // Point/schedule references are picked from what the station has, so a
+  // typo can't create a reference that silently resolves to null.
+  const pointData = await (await fetch('/api/points')).json();
+  // Building 822 is a Trane site with its own front end at /tracer; keep it
+  // out of this Tridium supervisor (matches populatePxPointOptions()).
+  const points = Object.values(pointData.equipment || {}).flat().filter(p => p.facility !== 'barracks822');
+  document.getElementById('ws-cfg-point').innerHTML =
+    points.map(p => '<option value="' + p.point + '">' + p.point + '</option>').join('');
+
+  const scheduleData = await (await fetch('/api/schedules')).json();
+  document.getElementById('ws-cfg-schedule').innerHTML =
+    scheduleData.schedules.map(s => '<option value="' + s.schedule_id + '">' + s.schedule_id + '</option>').join('');
+
+  updateWireSheetConfigField();
   wsBlockTypesLoaded = true;
 }
 
@@ -1029,6 +1102,10 @@ async function addWireSheetBlock() {
     type: document.getElementById('ws-block-type').value,
     x: document.getElementById('ws-block-x').value,
     y: document.getElementById('ws-block-y').value,
+    config_value: document.getElementById('ws-cfg-value').value,
+    config_point: document.getElementById('ws-cfg-point').value,
+    config_schedule: document.getElementById('ws-cfg-schedule').value,
+    config_op: document.getElementById('ws-cfg-op').value,
   });
 
   try {

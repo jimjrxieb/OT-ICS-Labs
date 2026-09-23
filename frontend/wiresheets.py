@@ -48,8 +48,8 @@ REQUIRED_CONFIG_KEYS: dict[str, list[str]] = {
 
 # Config keys that get used as lookup/reference identifiers elsewhere
 # (referenced_point_names(), referenced_schedule_ids() put these straight
-# into a set) and so must be strings -- unlike Constant's "value", which is
-# only ever returned as an output and has no such constraint.
+# into a set) and so must be strings. Constant's "value" is checked
+# separately in validate_block_config() (number or boolean).
 STRING_CONFIG_KEYS: dict[str, list[str]] = {
     "ScheduleRef": ["schedule_id"],
     "PointRef": ["point"],
@@ -57,10 +57,15 @@ STRING_CONFIG_KEYS: dict[str, list[str]] = {
 }
 
 
+COMPARE_OPS = (">", "<", ">=", "<=", "==")
+
+
 def validate_block_config(block: dict[str, Any]) -> list[str]:
     block_type = block.get("type")
     if not isinstance(block_type, str):
         return []
+    if block_type == "Compare":
+        return _validate_compare_config(block)
     required = REQUIRED_CONFIG_KEYS.get(block_type, [])
     if not required:
         return []
@@ -81,7 +86,51 @@ def validate_block_config(block: dict[str, Any]) -> list[str]:
             errors.append(
                 f"block {block.get('block_id')!r} config key {key!r} must be a string, got {config[key]!r}"
             )
+
+    # A Constant feeds Compare/Select/Boolean inputs, so only numbers and
+    # booleans make sense -- a string would compare as a TypeError, and a
+    # null would read as "no value" downstream.
+    if block_type == "Constant" and not isinstance(config["value"], (int, float, bool)):
+        errors.append(
+            f"block {block.get('block_id')!r} config key 'value' must be a number or boolean, got {config['value']!r}"
+        )
     return errors
+
+
+def _validate_compare_config(block: dict[str, Any]) -> list[str]:
+    # op is optional (evaluation defaults to ">"), but a present op must be
+    # one the evaluator knows, or the save succeeds and evaluation KeyErrors.
+    config = block.get("config")
+    if not isinstance(config, dict) or "op" not in config:
+        return []
+    if config["op"] not in COMPARE_OPS:
+        return [
+            f"block {block.get('block_id')!r} config key 'op' must be one of {list(COMPARE_OPS)}, got {config['op']!r}"
+        ]
+    return []
+
+
+def validate_block_references(
+    block: dict[str, Any],
+    known_points: set[str] | None,
+    known_schedules: set[str] | None,
+) -> list[str]:
+    """Reject point/schedule references the station doesn't have.
+
+    Only called once config shape has already validated, so the reference
+    keys are present and are strings. A None set means the caller didn't
+    supply that inventory, and that kind of reference is not checked.
+    """
+    block_type = block["type"]
+    if block_type in ("PointRef", "PointWriteRef") and known_points is not None:
+        point = block["config"]["point"]
+        if point not in known_points:
+            return [f"block {block['block_id']!r} references unknown point {point!r}"]
+    if block_type == "ScheduleRef" and known_schedules is not None:
+        schedule_id = block["config"]["schedule_id"]
+        if schedule_id not in known_schedules:
+            return [f"block {block['block_id']!r} references unknown schedule {schedule_id!r}"]
+    return []
 
 
 def slot_spec(block_type: str) -> dict[str, list[str]]:
@@ -238,6 +287,8 @@ def validate_wiresheet(
     existing_sheets: list[dict[str, Any]],
     *,
     is_create: bool,
+    known_points: set[str] | None = None,
+    known_schedules: set[str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     for key in ("wiresheet_id", "display_name", "blocks", "links"):
@@ -266,6 +317,9 @@ def validate_wiresheet(
 
     if errors:
         return errors
+
+    for block in ws["blocks"]:
+        errors.extend(validate_block_references(block, known_points, known_schedules))
 
     blocks_by_id = {b["block_id"]: b for b in ws["blocks"] if isinstance(b.get("block_id"), str)}
     seen_targets: set[tuple[str, str]] = set()
@@ -368,7 +422,8 @@ def self_test() -> int:
     )
     assert any("must all be strings" in e for e in errs), errs
 
-    # Fix 2c: incompatible Constant types feeding a Compare must be rejected, not raise TypeError.
+    # Fix 2c: a string Constant feeding a Compare must be rejected, not raise
+    # TypeError. Since Layer 1.5 it is caught earlier, by the Constant value check.
     mismatched_blocks = [
         {"block_id": "C1", "type": "Constant", "x": 0, "y": 0, "config": {"value": "not_a_number"}},
         {"block_id": "C2", "type": "Constant", "x": 0, "y": 50, "config": {"value": 5}},
@@ -382,7 +437,54 @@ def self_test() -> int:
         {"wiresheet_id": "WS3", "display_name": "WS3", "blocks": mismatched_blocks, "links": mismatched_links},
         [], is_create=True,
     )
-    assert any("type error" in e for e in errs), errs
+    assert any("config key 'value' must be a number or boolean" in e for e in errs), errs
+
+    # Layer 1.5: Constant values must be numbers or booleans -- no strings,
+    # nulls, or containers.
+    for bad_value in ("72", None, [1], {"v": 1}):
+        errs = validate_wiresheet(
+            {**good_ws, "blocks": [{"block_id": "A", "type": "Constant", "x": 0, "y": 0,
+                                      "config": {"value": bad_value}}], "links": []},
+            [], is_create=True,
+        )
+        assert any("config key 'value' must be a number or boolean" in e for e in errs), (bad_value, errs)
+
+    # Layer 1.5: Compare's op is optional, but when present must be a real operator.
+    errs = validate_wiresheet(
+        {**good_ws, "blocks": [{"block_id": "A", "type": "Compare", "x": 0, "y": 0,
+                                  "config": {"op": "=>"}}], "links": []},
+        [], is_create=True,
+    )
+    assert any("config key 'op' must be one of" in e for e in errs), errs
+    for good_op in (">", "<", ">=", "<=", "=="):
+        errs = validate_wiresheet(
+            {**good_ws, "blocks": [{"block_id": "A", "type": "Compare", "x": 0, "y": 0,
+                                      "config": {"op": good_op}}], "links": []},
+            [], is_create=True,
+        )
+        assert errs == [], (good_op, errs)
+
+    # Layer 1.5: when the caller supplies the known points/schedules, a
+    # reference to anything else is rejected instead of silently resolving
+    # to null at runtime.
+    ref_ws = {**good_ws, "links": [], "blocks": [
+        {"block_id": "P", "type": "PointRef", "x": 0, "y": 0, "config": {"point": "RTU1_SATT"}},
+        {"block_id": "W", "type": "PointWriteRef", "x": 0, "y": 50, "config": {"point": "NOPE_SP"}},
+        {"block_id": "S", "type": "ScheduleRef", "x": 0, "y": 100, "config": {"schedule_id": "NO_SUCH_SCHED"}},
+    ]}
+    errs = validate_wiresheet(ref_ws, [], is_create=True,
+                              known_points={"RTU1_SAT"}, known_schedules={"OFFICE_OCCUPANCY"})
+    assert any("references unknown point 'RTU1_SATT'" in e for e in errs), errs
+    assert any("references unknown point 'NOPE_SP'" in e for e in errs), errs
+    assert any("references unknown schedule 'NO_SUCH_SCHED'" in e for e in errs), errs
+
+    ok_ref_ws = {**good_ws, "links": [], "blocks": [
+        {"block_id": "P", "type": "PointRef", "x": 0, "y": 0, "config": {"point": "RTU1_SAT"}},
+        {"block_id": "S", "type": "ScheduleRef", "x": 0, "y": 100, "config": {"schedule_id": "OFFICE_OCCUPANCY"}},
+    ]}
+    errs = validate_wiresheet(ok_ref_ws, [], is_create=True,
+                              known_points={"RTU1_SAT"}, known_schedules={"OFFICE_OCCUPANCY"})
+    assert errs == [], errs
 
     # Regression: PointWriteRef/PointRef/ScheduleRef config values that are
     # present but not strings (e.g. a list) must be rejected, not silently
@@ -409,14 +511,14 @@ def self_test() -> int:
     )
     assert any("config key 'schedule_id' must be a string" in e for e in errs), errs
 
-    # Constant's "value" has no string constraint -- numeric/bool values
-    # are legitimate and must still pass.
-    errs = validate_wiresheet(
-        {**good_ws, "blocks": [{"block_id": "A", "type": "Constant", "x": 0, "y": 0,
-                                  "config": {"value": 5}}], "links": []},
-        [], is_create=True,
-    )
-    assert errs == [], errs
+    # Numeric and boolean Constant values are legitimate and must still pass.
+    for good_value in (5, 55.0, -0.01, True, False):
+        errs = validate_wiresheet(
+            {**good_ws, "blocks": [{"block_id": "A", "type": "Constant", "x": 0, "y": 0,
+                                      "config": {"value": good_value}}], "links": []},
+            [], is_create=True,
+        )
+        assert errs == [], (good_value, errs)
 
     # Fix 3: blank wiresheet_id and block_id must be rejected.
     errs = validate_wiresheet({**good_ws, "wiresheet_id": "   "}, [], is_create=True)

@@ -504,6 +504,14 @@ def get_wiresheet(wiresheet_id: str) -> dict[str, Any]:
     }
 
 
+def _wiresheet_reference_inventory() -> dict[str, set[str]]:
+    """Points and schedules a Wire Sheet block may reference on save."""
+    return {
+        "known_points": {pt["point"] for pt in _load_input_points()},
+        "known_schedules": {s["schedule_id"] for s in schedules.load_schedules()},
+    }
+
+
 @app.post("/api/wiresheets")
 def create_wiresheet(
     wiresheet_id: str,
@@ -552,7 +560,9 @@ def save_wiresheet(
         raise HTTPException(status_code=404, detail=f"Wire Sheet {wiresheet_id!r} not found")
 
     candidate = {**existing, "blocks": body.blocks, "links": body.links}
-    errors = wiresheets.validate_wiresheet(candidate, sheets, is_create=False)
+    errors = wiresheets.validate_wiresheet(
+        candidate, sheets, is_create=False, **_wiresheet_reference_inventory()
+    )
     if errors:
         raise HTTPException(status_code=400, detail={"errors": errors})
 
