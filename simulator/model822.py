@@ -9,6 +9,18 @@ one. Standard library only.
 
 Every tuning constant lives in TUNING so scripts/tune-822.py can sweep them
 without editing physics code.
+
+S-001 CHW plant (phase 1). Plant state persists in data/output/state_822.json
+across runs -- loop pressure, air in the loop, pump-room water, and a latched
+LowEvapFlow trip -- while fault knobs (e.g. --knob CHW-822:p1_tdv_leak_gpm=1.5)
+last only one bas_sim.py run. After a fault demo, put the plant back with:
+    python3 simulator/model822.py --restore-healthy-plant
+bas_sim.py warns when it loads a faulted plant without knobs. Known phase-1
+limitations: the P1 valve-body failure is a knob, not state, so once the knob
+is gone `field-verify inspect-valve P1_TDV` reports the valve dry even with
+water on the floor (phase 2 sessions persist the cause); loop supply is a
+first-order lag toward chiller leaving water with no modeled pull-down load,
+and RTAC822_EVAP_ENT_TEMP is leaving water plus a nominal rise, not loop return.
 """
 
 from __future__ import annotations
@@ -77,6 +89,7 @@ TUNING: dict[str, float] = {
     "LOOP_TAU_MIN": 8.0,              # loop supply lag behind chiller leaving water
     "LOOP_STANDBY_GAIN_F_PER_MIN": 0.05,  # pipe/mechanical-room heat gain with the chiller not producing
     "LOOP_MAX_F": 78.0,               # a stalled loop warms toward the building, not past it
+    # 0.0 disables the flow-proof trip (behavioral rollback of the S-001 flow proof)
     "EVAP_MIN_FLOW_FRAC": 0.25,       # evaporator flow switch setpoint, fraction of design flow
     "FLOW_PROOF_DELAY_MIN": 3.0,      # low flow must persist this long before the trip
     "CHILLER_RESTART_MIN": 5.0,       # start sequence after a manual reset
@@ -186,6 +199,22 @@ def restore_healthy_plant(state: dict[str, Any]) -> None:
     # the chiller panel reads _chiller directly. They come back on the next step.
     state.pop("_chiller", None)
     state.pop("_loop", None)
+
+
+def plant_fault_summary(state: dict[str, Any]) -> str:
+    """'' when the saved CHW plant sub-state is healthy; otherwise a short
+    description of the physical fault that persists into the next run."""
+    _ensure_plant_state(state)
+    chw, parts = state["chw"], []
+    if state["chiller"]["tripped"]:
+        parts.append("chiller tripped on LowEvapFlow (latched)")
+    if chw["air_frac"] > 0.0:
+        parts.append(f"air in the loop ({chw['air_frac']:.0%} flow lost)")
+    if chw["loop_psig"] < TUNING["LOOP_FILL_PSIG"] - 0.5:
+        parts.append(f"loop at {chw['loop_psig']:.1f} psig")
+    if state["plant_room"]["water_gal"] > 0.5:
+        parts.append(f"{state['plant_room']['water_gal']:.0f} gal on the pump-room floor")
+    return "; ".join(parts)
 
 
 def _chiller_stopped(ch: dict[str, Any], loop_f: float, diag: str) -> dict[str, Any]:
@@ -1076,6 +1105,7 @@ def self_test() -> int:
     assert truth["CHW822_P1_AMPS_PHYSICAL"] < TUNING["PUMP_FLA_AMPS"] * 0.5, truth
     assert pts["MAU01_SAT"] > healthy_210["MAU01_SAT"] + 5.0, (pts["MAU01_SAT"], healthy_210["MAU01_SAT"])
     tripped_sat = pts["MAU01_SAT"]
+    assert "tripped" in plant_fault_summary(st) and "psig" in plant_fault_summary(st), plant_fault_summary(st)
 
     # Isolate the leaking branch, switch to P2, open the fill: pressure returns,
     # the floor stops getting wetter, but the pump is still air-bound.
@@ -1109,6 +1139,8 @@ def self_test() -> int:
     assert st["plant_room"]["water_gal"] == 0.0 and st["chiller"] == _healthy_chiller_state()
     assert json.dumps({key: st[key] for key in ("mau", "fcu", "hall", "step")}, sort_keys=True) == air_before
     assert "_chiller" not in st and "_loop" not in st, "restore must not leave faulted-plant caches"
+    assert plant_fault_summary(st) == "", plant_fault_summary(st)
+    assert plant_fault_summary(cold_start_state()) == ""
 
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0

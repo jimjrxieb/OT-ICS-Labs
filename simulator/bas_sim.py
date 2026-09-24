@@ -316,6 +316,12 @@ def run_simulation(scenario: str, steps: int, seed: int, fault_id: str | None = 
                   if p.facility != model822.FACILITY or p.name in observable]
         points_by_name = {p.name: p for p in points}
     state_822 = model822.load_state() if has_822 else None
+    if state_822 is not None and not knobs:
+        lingering = model822.plant_fault_summary(state_822)
+        if lingering:
+            print(f"bas_sim: WARNING Building 822 CHW plant is still faulted from an earlier run "
+                  f"({lingering}). Physical plant state persists across runs; knobs do not. "
+                  f"Restore with: python3 simulator/model822.py --restore-healthy-plant", file=sys.stderr)
     overrides_822 = load_overrides_822() if has_822 else {}
     fault = None
     run_label = scenario

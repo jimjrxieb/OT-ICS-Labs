@@ -203,6 +203,10 @@ def self_test() -> int:
 
     # verify-travel's "known equipment" list must ignore the new plant keys.
     assert _valve_equipment(healthy) == ["MAU04"]
+
+    # The instruments' key list must match what the model actually writes.
+    assert set(PLANT_TRUTH_KEYS) <= set(model822.ground_truth_snapshot(model822.cold_start_state())), \
+        sorted(set(PLANT_TRUTH_KEYS) - set(model822.ground_truth_snapshot(model822.cold_start_state())))
     print("field-verify self-test passed")
     return 0
 
