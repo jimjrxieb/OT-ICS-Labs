@@ -128,7 +128,7 @@ live-break menu.
 | `sequences/` | Synthetic sequences of operation per equipment |
 | `bas_console.py` | Terminal CLI client for the same API |
 | `scripts/` | `start-frontend.sh`, `run-smoke-test.sh` |
-| `BUILD/`, `COMPLY/`, `evidence/`, `docs/`, `safety/` | Governance and methodology records — how this lab was specified, approved, built, and verified (CBBP: Comply → Build → Break → Prove). Optional reading; some internal docs reference the author's larger consulting framework and won't resolve outside it. |
+| `governance/` (`BUILD/`, `COMPLY/`, `evidence/`), `docs/`, `safety/` | Governance and methodology records — how this lab was specified, approved, built, and verified (CBBP: Comply → Build → Break → Prove). Optional reading; some internal docs reference the author's larger consulting framework and won't resolve outside it. |
 
 ## Safety & Data Boundary
 

@@ -64,7 +64,7 @@ Log every hint given — hints affect the grade (see call-log format).
   parent directories, no other projects, no system config.
 - **Only the whitelisted targets below.** Never modify or delete source
   code (`simulator/`, `frontend/*.py`, `*.html`, `open-source-stack/*.py`),
-  BUILD/, COMPLY/, sequences/, evidence/, docs/, or `data/input/` source
+  governance/, sequences/, docs/, or `data/input/` source
   inventories. Configs and runtime state only.
 - **Every break must be reversible, and you must prove it to yourself
   before breaking:** the sealed file must contain exact restore commands

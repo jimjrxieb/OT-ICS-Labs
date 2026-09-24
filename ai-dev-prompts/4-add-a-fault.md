@@ -12,7 +12,7 @@ Steps:
      correct_category, explanation)
    - data/input/points.json — the available points and their normal
      ranges (fault injection can only perturb points that exist)
-   - BUILD/2-approvedbuilds/BP-006-trouble-call-diagnosis-mode.md
+   - governance/BUILD/2-approvedbuilds/BP-006-trouble-call-diagnosis-mode.md
      sections on the injection schema — supported modes are: drift
      (rate_per_step from start_step), stuck/step/noise_flatline (pin at a
      value — noise_flatline reads as a dead/flatlined sensor), and
