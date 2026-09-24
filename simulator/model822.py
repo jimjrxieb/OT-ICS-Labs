@@ -171,6 +171,19 @@ def reset_chiller(state: dict[str, Any]) -> dict[str, bool]:
     return {"cleared": cleared, "flow_proven": proven}
 
 
+def restore_healthy_plant(state: dict[str, Any]) -> None:
+    """Lab reset, not a trainee repair: restore fill, no air, and a dry floor.
+
+    Air-side state and the simulation clock are preserved. Runtime snapshots
+    are refreshed by the next step; callers must not treat old snapshots as
+    post-restore observations. Sessions will restore their own saved snapshot.
+    """
+    state["chw"] = {"entering_f": TUNING["CHW_SETPOINT_F"],
+                    "loop_psig": TUNING["LOOP_FILL_PSIG"], "air_frac": 0.0}
+    state["plant_room"] = {"water_gal": 0.0}
+    state["chiller"] = _healthy_chiller_state()
+
+
 def _chiller_stopped(ch: dict[str, Any], loop_f: float, diag: str) -> dict[str, Any]:
     """Chiller outputs while tripped or in its restart delay: no capacity,
     evaporator temperatures follow the loop water."""
@@ -1039,6 +1052,59 @@ def self_test() -> int:
     assert truth["PUMPROOM_WATER_GAL_PHYSICAL"] == 0.0
     assert not any(k in pts for k in truth), "field-only values must never be BAS points"
 
+    # --- S-001 end to end: cause -> symptoms -> physical repair -> recovery -------
+    def run(st: dict[str, Any], start: int, n: int, knobs: dict[str, Any] | None = None):
+        pts: dict[str, float] = {}
+        for i in range(start, start + n):
+            st, pts = step_822(st, i, knobs=knobs)
+        return st, pts
+
+    _, healthy_210 = run(cold_start_state(), 0, 210)
+    leak = {"CHW-822": {"p1_tdv_leak_gpm": 1.5}}
+    st, _ = run(cold_start_state(), 0, 30)
+    st, pts = run(st, 30, 180, leak)
+    truth = ground_truth_snapshot(st)
+    assert pts["CHW822_P1_STATUS"] == 1, "the pump still shows running"
+    assert pts["CHW822_GPM"] < TUNING["CHW_GPM_DESIGN"] * TUNING["EVAP_MIN_FLOW_FRAC"], pts["CHW822_GPM"]
+    assert pts["RTAC822_ACTIVE_DIAG"] == DIAG_STATES.index("LowEvapFlow")
+    assert truth["CHW822_LOOP_PSIG_PHYSICAL"] < TUNING["PUMP_MIN_SUCTION_PSIG"], truth
+    assert truth["PUMPROOM_WATER_GAL_PHYSICAL"] > 50.0, truth
+    assert truth["CHW822_P1_AMPS_PHYSICAL"] < TUNING["PUMP_FLA_AMPS"] * 0.5, truth
+    assert pts["MAU01_SAT"] > healthy_210["MAU01_SAT"] + 5.0, (pts["MAU01_SAT"], healthy_210["MAU01_SAT"])
+    tripped_sat = pts["MAU01_SAT"]
+
+    # Isolate the leaking branch, switch to P2, open the fill: pressure returns,
+    # the floor stops getting wetter, but the pump is still air-bound.
+    fixed = {"CHW-822": {"p1_tdv_leak_gpm": 1.5, "p1_branch_isolated": True,
+                         "p1_running": False, "p2_running": True, "makeup_valve_open": True}}
+    water_before = st["plant_room"]["water_gal"]
+    st, pts = run(st, 210, 60, fixed)
+    assert st["chw"]["loop_psig"] > TUNING["LOOP_FILL_PSIG"] - 0.5, st["chw"]
+    assert st["plant_room"]["water_gal"] == water_before, "isolated: no more water on the floor"
+    assert pts["CHW822_GPM"] == 0.0, "refill alone does not remove the air"
+    assert pts["RTAC822_ACTIVE_DIAG"] == DIAG_STATES.index("LowEvapFlow"), "still latched"
+
+    # Purge, then reset with flow proven: the building recovers over time.
+    assert purge_air(st) is True
+    st, pts = run(st, 270, 5, fixed)
+    assert pts["CHW822_GPM"] > TUNING["CHW_GPM_DESIGN"] * 0.9, pts["CHW822_GPM"]
+    before_reset = pts["MAU01_SAT"]
+    assert reset_chiller(st) == {"cleared": True, "flow_proven": True}
+    st, first = run(st, 275, 1, fixed)
+    assert first["MAU01_SAT"] > before_reset - 1.0, "recovery must not be instant (restart delay, slew)"
+    st, pts = run(st, 276, 60, fixed)
+    assert pts["RTAC822_ACTIVE_DIAG"] == 0 and pts["RTAC822_PCT_CAPACITY"] > 0.0
+    assert abs(pts["CHW822_ENT_SUP_TEMP"] - TUNING["CHW_SETPOINT_F"]) <= 2.0, pts["CHW822_ENT_SUP_TEMP"]
+    assert pts["MAU01_SAT"] < tripped_sat - 3.0, (pts["MAU01_SAT"], tripped_sat)
+    assert st["chiller"]["unproven_resets"] == 0
+
+    # Lab utility puts the plant back without touching air-side state.
+    air_before = json.dumps({key: st[key] for key in ("mau", "fcu", "hall", "step")}, sort_keys=True)
+    restore_healthy_plant(st)
+    assert st["chw"]["loop_psig"] == TUNING["LOOP_FILL_PSIG"] and st["chw"]["air_frac"] == 0.0
+    assert st["plant_room"]["water_gal"] == 0.0 and st["chiller"] == _healthy_chiller_state()
+    assert json.dumps({key: st[key] for key in ("mau", "fcu", "hall", "step")}, sort_keys=True) == air_before
+
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0
     assert control_signal_volts(0.0, "2-10V") == 2.0
@@ -1056,5 +1122,21 @@ def self_test() -> int:
     return 0
 
 
+def _restore_cli() -> int:
+    if (OUTPUT_DIR / ".822-bacnet.lock").exists():
+        print("model822: bacnet822.py owns Building 822 state; stop it first", file=sys.stderr)
+        return 1
+    state = load_state()
+    restore_healthy_plant(state)
+    save_state(state)
+    print("model822: CHW plant restored to healthy (fill pressure, no air, chiller reset, floor dry)")
+    print("Run bas_sim.py with healthy knobs to refresh BAS points and field observations.")
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(self_test() if "--self-test" in sys.argv else 0)
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
+    if "--restore-healthy-plant" in sys.argv:
+        sys.exit(_restore_cli())
+    sys.exit(0)
