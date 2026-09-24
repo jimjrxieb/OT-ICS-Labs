@@ -1,0 +1,55 @@
+# Dependabot keeps pinned dependencies current: the SHA-pinned GitHub
+# Actions, both pip requirement files, the Node-RED base image, and the live
+# pipeline's Docker Compose images. Updates
+# are grouped per ecosystem into one weekly PR, and every PR runs ci.yml,
+# security.yml and codeql.yml before merge.
+#
+# The 7-day cooldown lets a new release age a week before Dependabot proposes
+# it, which blunts attacks that ship a compromised version and rely on fast
+# adoption.
+#
+# Not covered: the scanner binaries that security.yml and ci.yml download with
+# curl (gitleaks, trivy, grype, hadolint, syft). Bump those by hand, updating
+# the version and its SHA-256 together.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directories:
+      - "/"
+      - "/open-source-stack"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: "/open-source-stack/nodered"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # Mosquitto, InfluxDB, Grafana and Node-RED images in docker-compose.yml.
+  - package-ecosystem: docker-compose
+    directory: "/open-source-stack"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      compose-images:
+        patterns: ["*"]

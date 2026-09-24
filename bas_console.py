@@ -16,6 +16,7 @@ import cmd
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -89,18 +90,28 @@ SCENARIO_NAMES = [
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+def _checked_url(url: str) -> str:
+    """Only http(s): urlopen also accepts file:// and other schemes."""
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme not in ("http", "https"):
+        raise ValueError(f"refusing non-HTTP URL scheme {scheme!r}: {url}")
+    return url
+
+
 def _get(url: str) -> dict[str, Any]:
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
+        # Bandit B310: the URL scheme is limited to http/https by _checked_url().
+        with urllib.request.urlopen(_checked_url(url), timeout=5) as resp:  # nosec B310
             return json.loads(resp.read().decode())
     except urllib.error.URLError as exc:
         raise ConnectionError(f"Cannot reach server at {url} — is it running? ({exc})") from exc
 
 
 def _post(url: str) -> dict[str, Any]:
-    req = urllib.request.Request(url, method="POST", data=b"")
+    req = urllib.request.Request(_checked_url(url), method="POST", data=b"")
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        # Bandit B310: the URL scheme is limited to http/https by _checked_url().
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             return json.loads(resp.read().decode())
     except urllib.error.URLError as exc:
         raise ConnectionError(f"Cannot reach server at {url} ({exc})") from exc

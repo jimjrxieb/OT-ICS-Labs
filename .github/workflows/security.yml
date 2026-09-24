@@ -1,0 +1,250 @@
+# BAS-SIM security scans: the agent.md tool set (Gitleaks, Bandit, Semgrep,
+# Trivy filesystem, Grype, Hadolint) run directly in CI, plus zizmor (audits
+# these workflows) and Dependency Review (pull requests). The GP-CONSULTING
+# wrapper scripts agent.md uses locally are not part of this repository.
+#
+# Gate (fails the run): any secret in git history, any HIGH/CRITICAL
+# vulnerability (Trivy or Grype), any Semgrep ERROR, any Bandit HIGH, any
+# Hadolint error, any HIGH zizmor finding, and (PRs) any newly added
+# dependency with a HIGH+ advisory. Everything else is reported, not blocking:
+# full results go to the repository's Security tab as SARIF. Each gate runs
+# first, on the untouched checkout, so report files never end up in the
+# scanned tree.
+#
+# Supply chain: GitHub-owned actions only, pinned to commit SHAs (Dependabot
+# keeps them current); scanner binaries are downloaded at fixed versions and
+# checked against their published SHA-256 before use (Dependabot cannot bump
+# these: update the version and checksum together); Python tools are pinned
+# on PyPI.
+
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"   # weekly: new CVEs appear even when the code doesn't change
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Explicit bash runs steps with -eo pipefail, so a failing command on the left
+# of a pipe (e.g. git ls-files | xargs hadolint) fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Secrets (Gitleaks, full git history)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0              # scan every commit, not just the tip
+          persist-credentials: false
+      - name: Install gitleaks 8.30.1 (checksum-verified)
+        run: |
+          curl -sSfL -o gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks && sudo install gitleaks /usr/local/bin/ && rm gitleaks gitleaks.tgz
+      - name: Gate (any leak fails)
+        run: |
+          gitleaks detect --source . --log-opts="--all" --redact --no-banner \
+            --report-format sarif --report-path gitleaks.sarif --exit-code 1
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('gitleaks.sarif') != ''
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+  bandit:
+    name: Python SAST (Bandit)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install bandit 1.9.4
+        run: pip install "bandit[sarif]==1.9.4"
+      # B101 (assert) is skipped: the repo's tests are module self-tests built
+      # on assert by design, and they are not run under python -O.
+      - name: Gate (any HIGH fails)
+        run: bandit -r . -s B101 --severity-level high -q
+      - name: Report (all severities)
+        if: always()
+        run: bandit -r . -s B101 -f sarif -o bandit.sarif --exit-zero
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('bandit.sarif') != ''
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+  semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    env:
+      SEMGREP_RULES: --config p/python --config p/security-audit --config p/secrets --config p/dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install semgrep 1.178.0
+        run: pip install semgrep==1.178.0
+      - name: Gate (any ERROR fails)
+        run: semgrep scan $SEMGREP_RULES --metrics=off --severity ERROR --error .
+      - name: Report (all severities)
+        if: always()
+        run: semgrep scan $SEMGREP_RULES --metrics=off --sarif --output semgrep.sarif .
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('semgrep.sarif') != ''
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  trivy:
+    name: Dependencies, secrets, misconfig (Trivy fs)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install trivy 0.74.0 (checksum-verified)
+        run: |
+          curl -sSfL -o trivy.tgz https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          echo "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a  trivy.tgz" | sha256sum -c -
+          tar -xzf trivy.tgz trivy && sudo install trivy /usr/local/bin/ && rm trivy trivy.tgz
+      - name: Gate (any HIGH/CRITICAL fails)
+        run: trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .
+      - name: Report (all severities)
+        if: always()
+        run: trivy fs --scanners vuln,secret,misconfig --format sarif --output trivy.sarif --exit-code 0 .
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('trivy.sarif') != ''
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+  grype:
+    name: Dependency cross-check (Grype)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install grype 0.119.0 (checksum-verified)
+        run: |
+          curl -sSfL -o grype.tgz https://github.com/anchore/grype/releases/download/v0.119.0/grype_0.119.0_linux_amd64.tar.gz
+          echo "3fa2dc4b924621ab65404cf08d0b8438d896d80ab949c9d5a4ca283c36004c9b  grype.tgz" | sha256sum -c -
+          tar -xzf grype.tgz grype && sudo install grype /usr/local/bin/ && rm grype grype.tgz
+      - name: Gate (any HIGH/CRITICAL fails)
+        run: grype dir:. --fail-on high -q
+      - name: Report (all severities)
+        if: always()
+        run: grype dir:. -o sarif --file grype.sarif
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('grype.sarif') != ''
+        with:
+          sarif_file: grype.sarif
+          category: grype
+
+  hadolint:
+    name: Dockerfile lint (Hadolint)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install hadolint 2.15.1 (checksum-verified)
+        run: |
+          curl -sSfL -o hadolint https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
+          echo "c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507  hadolint" | sha256sum -c -
+          sudo install hadolint /usr/local/bin/ && rm hadolint
+      - name: Gate (any error fails)
+        run: git ls-files -z '*Dockerfile*' | xargs -0 --no-run-if-empty hadolint --failure-threshold error
+      - name: Report (all levels)
+        if: always()
+        run: git ls-files -z '*Dockerfile*' | xargs -0 --no-run-if-empty hadolint --format sarif > hadolint.sarif || true
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('hadolint.sarif') != ''
+        with:
+          sarif_file: hadolint.sarif
+          category: hadolint
+
+  zizmor:
+    name: Workflow security (zizmor)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install zizmor 1.30.1
+        run: pip install zizmor==1.30.1
+      # The read-only job token lets zizmor's online audits check pinned
+      # action SHAs (impostor commits, known-vulnerable actions).
+      - name: Gate (any HIGH fails)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --no-progress --min-severity high .github/
+      - name: Report (all findings)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --no-progress --format sarif .github/ > zizmor.sarif || true
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+        if: always() && hashFiles('zizmor.sarif') != ''
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+  dependency-review:
+    name: Dependency review (pull requests)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Gate (a newly added dependency with a HIGH+ advisory fails)
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high

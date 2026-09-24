@@ -1,0 +1,68 @@
+# BAS-SIM build check: a clean checkout must pass the smoke test. The smoke
+# test is the repository's test gate (generation, module self-tests, the
+# Building 822 regression baseline, the JS editor tests, and the BACnet
+# server self-test), so it needs both requirement files and Node. Pushes to
+# main also publish a CycloneDX SBOM of the tree as a run artifact.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Explicit bash runs steps with -eo pipefail.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke test (clean checkout)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "22"       # current LTS line; Node 20 reached end of life in April 2026
+      - name: Install dependencies (pinned)
+        run: pip install -r requirements.txt -r open-source-stack/requirements.txt
+      - name: Smoke test
+        run: bash scripts/run-smoke-test.sh
+      - name: API imports
+        run: python3 -c "import frontend.bas_api"
+
+  sbom:
+    name: SBOM (CycloneDX, Syft)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install syft 1.52.0 (checksum-verified)
+        run: |
+          curl -sSfL -o syft.tgz https://github.com/anchore/syft/releases/download/v1.52.0/syft_1.52.0_linux_amd64.tar.gz
+          echo "caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d  syft.tgz" | sha256sum -c -
+          tar -xzf syft.tgz syft && sudo install syft /usr/local/bin/ && rm syft syft.tgz
+      - name: Generate SBOM
+        run: syft scan dir:. -o cyclonedx-json=bas-sim-sbom.cdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-cyclonedx
+          path: bas-sim-sbom.cdx.json
+          retention-days: 90
