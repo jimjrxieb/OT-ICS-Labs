@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -176,6 +177,27 @@ def backups_containing(filename: str) -> list[dict[str, Any]]:
 
 
 def self_test() -> int:
+    """Run the self-test against a throwaway backup directory.
+
+    The checks make real snapshots and real log entries; pointing them at a
+    scratch directory (inside ROOT, since backup_dir paths are recorded
+    relative to it) keeps smoke runs from piling snapshots into
+    data/output/platform-backups/ and the shared backup log.
+    """
+    global BACKUP_DIR, BACKUP_LOG_FILE
+    real = (BACKUP_DIR, BACKUP_LOG_FILE)
+    parent = ROOT / "data" / "output"
+    parent.mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(prefix=".platform-selftest-", dir=parent))
+    BACKUP_DIR, BACKUP_LOG_FILE = scratch / "platform-backups", scratch / "platform-backup-log.jsonl"
+    try:
+        return _self_test_checks()
+    finally:
+        BACKUP_DIR, BACKUP_LOG_FILE = real
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _self_test_checks() -> int:
     """Backup snapshot mechanics: real file copy, real log entry, correct shape."""
     probe = INPUT_DIR / "schedules.json"
     assert probe.exists(), "self-test requires data/input/schedules.json to exist"

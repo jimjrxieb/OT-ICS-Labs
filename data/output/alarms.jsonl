@@ -1,3 +1,0 @@
-{"equipment": "AHU-OR-1", "message": "AHU-OR-1 discharge air temperature abnormal", "normal_max": 58.0, "normal_min": 52.0, "point": "AHU_OR1_SAT", "priority": "high", "timestamp": "2026-06-25T12:09:00+00:00", "units": "F", "value": 58.131}
-{"equipment": "AHU-OR-1", "message": "AHU-OR-1 discharge air temperature abnormal", "normal_max": 58.0, "normal_min": 52.0, "point": "AHU_OR1_SAT", "priority": "high", "timestamp": "2026-06-25T12:10:00+00:00", "units": "F", "value": 58.419}
-{"equipment": "AHU-OR-1", "message": "AHU-OR-1 discharge air temperature abnormal", "normal_max": 58.0, "normal_min": 52.0, "point": "AHU_OR1_SAT", "priority": "high", "timestamp": "2026-06-25T12:11:00+00:00", "units": "F", "value": 58.81}
