@@ -182,6 +182,10 @@ def restore_healthy_plant(state: dict[str, Any]) -> None:
                     "loop_psig": TUNING["LOOP_FILL_PSIG"], "air_frac": 0.0}
     state["plant_room"] = {"water_gal": 0.0}
     state["chiller"] = _healthy_chiller_state()
+    # Drop the last step's runtime caches: they describe the faulted plant, and
+    # the chiller panel reads _chiller directly. They come back on the next step.
+    state.pop("_chiller", None)
+    state.pop("_loop", None)
 
 
 def _chiller_stopped(ch: dict[str, Any], loop_f: float, diag: str) -> dict[str, Any]:
@@ -1104,6 +1108,7 @@ def self_test() -> int:
     assert st["chw"]["loop_psig"] == TUNING["LOOP_FILL_PSIG"] and st["chw"]["air_frac"] == 0.0
     assert st["plant_room"]["water_gal"] == 0.0 and st["chiller"] == _healthy_chiller_state()
     assert json.dumps({key: st[key] for key in ("mau", "fcu", "hall", "step")}, sort_keys=True) == air_before
+    assert "_chiller" not in st and "_loop" not in st, "restore must not leave faulted-plant caches"
 
     # --- control signal: configurable per device, not a single global assumption
     assert control_signal_volts(100.0, "2-10V") == 10.0
@@ -1130,7 +1135,7 @@ def _restore_cli() -> int:
     restore_healthy_plant(state)
     save_state(state)
     print("model822: CHW plant restored to healthy (fill pressure, no air, chiller reset, floor dry)")
-    print("Run bas_sim.py with healthy knobs to refresh BAS points and field observations.")
+    print("Run bas_sim.py with healthy knobs to refresh BAS points, the chiller panel, and field observations.")
     return 0
 
 
