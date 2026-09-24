@@ -1,0 +1,8 @@
+[
+  {
+    "point": "VAV601_TEMP",
+    "condition": "outside_normal",
+    "priority": "medium",
+    "message": "Floor 6 north zone temperature outside range"
+  }
+]

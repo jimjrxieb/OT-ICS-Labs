@@ -1,0 +1,11 @@
+[
+  {
+    "id": "VAV-601",
+    "type": "VAV",
+    "serves": "Floor 6 Open Office North",
+    "vendor": "Johnson Controls",
+    "controller": "JCI-VMA-601",
+    "purdue_level": 1,
+    "facility": "office"
+  }
+]

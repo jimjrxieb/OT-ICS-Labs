@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A visual Niagara 4 study guide for BAS technicians, grounded in the synthetic BAS training lab.">
+  <title>Niagara 4 Field Guide</title>
+  <style>
+    :root {
+      --ink: #14231f;
+      --muted: #5f706a;
+      --paper: #f5f2e9;
+      --panel: #fffdf7;
+      --line: #d8d3c4;
+      --green: #0c6b55;
+      --green-dark: #084b3d;
+      --green-pale: #dff0e8;
+      --amber: #c77a12;
+      --amber-pale: #fff0d2;
+      --blue: #245d7a;
+      --blue-pale: #deedf4;
+      --red: #a54232;
+      --shadow: 0 16px 40px rgba(20, 35, 31, .09);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 85% 5%, rgba(12, 107, 85, .10), transparent 25rem),
+        linear-gradient(180deg, #ebe7da 0, var(--paper) 32rem);
+      font: 16px/1.62 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--green-dark); text-underline-offset: 3px; }
+    code { font-family: "SFMono-Regular", Consolas, monospace; font-size: .88em; }
+
+    .shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 30px 24px;
+      color: #eef8f3;
+      background: linear-gradient(165deg, #102c25, #071b17 75%);
+      overflow-y: auto;
+    }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 18px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 14px;
+      color: #fff;
+      background: rgba(255,255,255,.08);
+      font: 800 18px/1 ui-monospace, monospace;
+    }
+    aside h1 { margin: 0; font-size: 1.2rem; letter-spacing: .01em; }
+    aside .subtitle { margin: 4px 0 26px; color: #9fc5b8; font-size: .84rem; }
+    nav a {
+      display: block;
+      margin: 4px 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: #cce2da;
+      text-decoration: none;
+      font-size: .9rem;
+    }
+    nav a:hover, nav a:focus { color: #fff; background: rgba(255,255,255,.09); outline: none; }
+    .side-note {
+      margin-top: 28px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 12px;
+      color: #abcbbf;
+      background: rgba(255,255,255,.05);
+      font-size: .77rem;
+    }
+
+    main { min-width: 0; padding: 38px clamp(22px, 5vw, 76px) 90px; }
+    .content { max-width: 1180px; margin: 0 auto; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 390px;
+      padding: clamp(34px, 6vw, 72px);
+      border-radius: 28px;
+      color: #effbf6;
+      background: linear-gradient(120deg, #0b4e3f 0%, #0d7259 58%, #36957d 100%);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -90px;
+      bottom: -130px;
+      width: 410px;
+      height: 410px;
+      border: 46px solid rgba(255,255,255,.08);
+      border-radius: 50%;
+    }
+    .eyebrow { margin: 0 0 14px; color: #a9ded0; font-size: .76rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .hero h2 { max-width: 730px; margin: 0; font: 800 clamp(2.7rem, 7vw, 5.8rem)/.93 Georgia, serif; letter-spacing: -.045em; }
+    .hero .lede { max-width: 680px; margin: 26px 0 34px; color: #d5ebe4; font-size: 1.12rem; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 10px; }
+    .pill { padding: 8px 13px; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: rgba(0,0,0,.10); font-size: .78rem; font-weight: 700; }
+
+    section { scroll-margin-top: 24px; margin-top: 64px; }
+    .section-kicker { color: var(--green); font-size: .72rem; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+    h2.section-title { margin: 5px 0 10px; font: 750 clamp(1.9rem, 4vw, 3.1rem)/1.05 Georgia, serif; letter-spacing: -.025em; }
+    .section-intro { max-width: 760px; margin: 0 0 28px; color: var(--muted); }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 5px solid var(--amber);
+      border-radius: 0 12px 12px 0;
+      background: var(--amber-pale);
+    }
+    .callout strong { color: #704307; }
+
+    .roadmap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .road-card, .card {
+      position: relative;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255,253,247,.88);
+      box-shadow: 0 8px 24px rgba(20,35,31,.05);
+    }
+    .road-card .num { color: var(--green); font: 800 2rem/1 Georgia, serif; }
+    .road-card h3 { margin: 12px 0 7px; font-size: 1rem; }
+    .road-card p { margin: 0; color: var(--muted); font-size: .86rem; }
+    .road-card.primary { border-color: #63a991; background: var(--green-pale); }
+    .road-card.separate { border-style: dashed; background: var(--blue-pale); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 24px;
+      margin-top: 28px;
+    }
+    .flow-step {
+      position: relative;
+      min-height: 124px;
+      padding: 18px 15px;
+      border: 1px solid #cad8d2;
+      border-radius: 15px;
+      background: var(--panel);
+    }
+    .flow-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -21px;
+      top: 42%;
+      color: var(--green);
+      font-size: 1.4rem;
+      font-weight: 800;
+    }
+    .flow-step b { display: block; margin-bottom: 6px; color: var(--green-dark); }
+    .flow-step span { color: var(--muted); font-size: .82rem; }
+
+    .terms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--panel);
+    }
+    summary { cursor: pointer; padding: 16px 18px; color: var(--green-dark); font-weight: 780; }
+    details p { margin: 0; padding: 0 18px 18px; color: var(--muted); font-size: .88rem; }
+
+    .compare { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+    .compare th, .compare td { padding: 13px 15px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .compare th { color: #fff; background: var(--green-dark); font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+    .compare tr:last-child td { border-bottom: 0; }
+    .compare td:nth-child(1) { width: 25%; font-weight: 750; }
+    .compare td:nth-child(2) { width: 28%; color: var(--blue); font-weight: 700; }
+    .compare td { font-size: .88rem; }
+
+    .coverage { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
+    .coverage .card { display: grid; grid-template-columns: 46px 1fr; gap: 14px; padding: 18px; }
+    .icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; color: var(--green-dark); background: var(--green-pale); font-weight: 900; }
+    .coverage h3 { margin: 0 0 4px; font-size: .96rem; }
+    .coverage p { margin: 0; color: var(--muted); font-size: .83rem; }
+    .limit { display: inline-block; margin-top: 8px; color: var(--red); font-size: .74rem; font-weight: 750; }
+
+    .loop { counter-reset: loop; display: grid; grid-template-columns: repeat(7, 1fr); gap: 9px; }
+    .loop div { counter-increment: loop; min-height: 144px; padding: 17px 13px; border-radius: 14px; color: #eaf7f2; background: var(--green-dark); font-size: .8rem; }
+    .loop div::before { content: counter(loop); display: block; margin-bottom: 18px; color: #82c8b2; font: 800 1.55rem/1 Georgia, serif; }
+    .loop strong { display: block; margin-bottom: 5px; color: #fff; }
+
+    .checklist { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px 18px; }
+    .check-item { position: relative; padding: 13px 16px 13px 47px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); font-size: .88rem; }
+    .check-item::before { content: "□"; position: absolute; left: 16px; top: 7px; color: var(--green); font-size: 1.45rem; }
+
+    .diagnostic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
+    .diagnostic-grid .card { min-height: 175px; }
+    .diagnostic-grid .step-label { color: var(--green); font-size: .7rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+    .diagnostic-grid h3 { margin: 8px 0; font-size: 1.05rem; }
+    .diagnostic-grid p { margin: 0; color: var(--muted); font-size: .84rem; }
+    .evidence-chain { margin: 24px 0; padding: 21px; border: 1px solid #bad7cc; border-radius: 15px; background: var(--green-pale); }
+    .evidence-chain code { display: block; color: var(--green-dark); font-size: .9rem; white-space: normal; }
+    .scenario-list { display: grid; gap: 16px; }
+    .scenario { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: 0 8px 22px rgba(20,35,31,.045); }
+    .scenario > summary { list-style: none; padding: 20px 22px; }
+    .scenario > summary::-webkit-details-marker { display: none; }
+    .scenario > summary::after { content: "+ reveal reasoning"; float: right; color: var(--green); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+    .scenario[open] > summary::after { content: "− hide reasoning"; }
+    .scenario .tag { display: inline-block; margin-right: 9px; padding: 4px 8px; border-radius: 999px; color: var(--green-dark); background: var(--green-pale); font-size: .66rem; letter-spacing: .07em; text-transform: uppercase; }
+    .scenario .prompt { display: inline; color: var(--ink); font-weight: 760; }
+    .answer { padding: 0 22px 22px; }
+    .answer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .answer-box { padding: 14px; border-radius: 11px; background: #f2f0e8; }
+    .answer-box b { display: block; margin-bottom: 4px; color: var(--green-dark); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
+    .answer-box p, .answer > p { margin: 0; color: var(--muted); font-size: .84rem; }
+    .safety { border-left: 4px solid var(--red); background: #f8e5e1; }
+
+    footer { margin-top: 70px; padding-top: 25px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+    .print-only { display: none; }
+
+    @media (max-width: 1040px) {
+      .roadmap { grid-template-columns: repeat(2, 1fr); }
+      .flow { grid-template-columns: 1fr; gap: 10px; }
+      .flow-step { min-height: auto; }
+      .flow-step:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -20px; }
+      .loop { grid-template-columns: repeat(4, 1fr); }
+    }
+    @media (max-width: 760px) {
+      .shell { display: block; }
+      aside { position: relative; height: auto; padding: 20px; }
+      aside .mark, aside .subtitle, aside .side-note { display: none; }
+      aside h1 { margin-bottom: 10px; }
+      nav { display: flex; gap: 6px; overflow-x: auto; }
+      nav a { flex: 0 0 auto; white-space: nowrap; }
+      main { padding: 18px 15px 60px; }
+      .hero { min-height: auto; padding: 36px 24px; border-radius: 20px; }
+      .hero h2 { font-size: 2.75rem; }
+      .roadmap, .terms, .coverage, .checklist, .diagnostic-grid, .answer-grid { grid-template-columns: 1fr; }
+      .loop { grid-template-columns: repeat(2, 1fr); }
+      .table-wrap { overflow-x: auto; }
+      .compare { min-width: 700px; }
+    }
+    @media print {
+      @page { margin: .55in; }
+      body { background: #fff; font-size: 10pt; }
+      .shell { display: block; }
+      aside { display: none; }
+      main { padding: 0; }
+      .hero { min-height: 0; padding: 34px; box-shadow: none; print-color-adjust: exact; }
+      section { margin-top: 34px; break-inside: avoid; }
+      .road-card, .card, details, .compare { box-shadow: none; break-inside: avoid; }
+      details > * { display: block; }
+      .flow, .loop { gap: 6px; }
+      .flow-step:not(:last-child)::after { display: none; }
+      a { color: inherit; text-decoration: none; }
+      .print-only { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="mark">N4</div>
+      <h1>Niagara Field Guide</h1>
+      <p class="subtitle">Technician → engineer</p>
+      <nav aria-label="Study guide sections">
+        <a href="#roadmap">Certification roadmap</a>
+        <a href="#mental-model">System mental model</a>
+        <a href="#vocabulary">Core vocabulary</a>
+        <a href="#kubernetes">Kubernetes bridge</a>
+        <a href="#lab">Lab coverage</a>
+        <a href="#practice">Mastery loop</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#questions">Scenario questions</a>
+        <a href="#outcomes">Level 1 outcomes</a>
+      </nav>
+      <div class="side-note">
+        Synthetic training only. This guide does not replace an authorized
+        Tridium course, real Workbench access, or site-specific procedures.
+      </div>
+    </aside>
+
+    <main>
+      <div class="content">
+        <header class="hero">
+          <p class="eyebrow">Building Automation · Practical Study Edition</p>
+          <h2>Niagara 4,<br>without the fog.</h2>
+          <p class="lede">A visual map from field device to station, from Wire Sheet to Px graphic, and from first login to Level 1 competence.</p>
+          <div class="pill-row">
+            <span class="pill">TCP Level 1 focus</span>
+            <span class="pill">Hands-on + scenario study</span>
+            <span class="pill">BAS-SIM grounded</span>
+            <span class="pill">Updated 2026-09-22</span>
+          </div>
+        </header>
+
+        <section id="roadmap">
+          <div class="section-kicker">Start with the right target</div>
+          <h2 class="section-title">Certification roadmap</h2>
+          <p class="section-intro">“N4 Technician” is common shop language. Tridium's current technical path is organized by TCP level. For a new controls technician, Level 1 is the required foundation; the Java Developer credential is a different branch.</p>
+          <div class="roadmap">
+            <article class="road-card primary"><span class="num">01</span><h3>TCP Level 1 Foundations</h3><p>Begin here. Station fundamentals, integration, logic, graphics, and core JACE/Supervisor work.</p></article>
+            <article class="road-card"><span class="num">02</span><h3>Level 2 Intermediate</h3><p>Builds on TCP certification with stronger Workbench and system-integration practice.</p></article>
+            <article class="road-card"><span class="num">03</span><h3>Level 3 Advanced</h3><p>Advanced station, enterprise, query, certificate, and provisioning work.</p></article>
+            <article class="road-card separate"><span class="num">DEV</span><h3>Developer Certification</h3><p>Separate Java path for custom modules and drivers—not the default technician progression.</p></article>
+          </div>
+          <p class="callout"><strong>Assessment caution:</strong> public Tridium material confirms substantial hands-on course work but does not clearly publish the exact final assessment format. Prepare to build the artifact and explain the scenario.</p>
+        </section>
+
+        <section id="mental-model">
+          <div class="section-kicker">The path a value travels</div>
+          <h2 class="section-title">One system, five layers</h2>
+          <p class="section-intro">When a graphic looks wrong, walk backward through the chain. Do not start by blaming the screen.</p>
+          <div class="flow" aria-label="Niagara value flow">
+            <div class="flow-step"><b>1 · Field</b><span>A sensor, actuator, BACnet object, or Modbus register exists outside Niagara.</span></div>
+            <div class="flow-step"><b>2 · Integration</b><span>A Driver, Network, Device, and Proxy Extension bring it into the station.</span></div>
+            <div class="flow-step"><b>3 · Logic</b><span>Schedules, Wire Sheets, links, and components transform or command it.</span></div>
+            <div class="flow-step"><b>4 · Services</b><span>AlarmService and HistoryService turn behavior into records and evidence.</span></div>
+            <div class="flow-step"><b>5 · Presentation</b><span>Property Sheets, Nav views, and Px graphics expose it to people.</span></div>
+          </div>
+        </section>
+
+        <section id="vocabulary">
+          <div class="section-kicker">Language before speed</div>
+          <h2 class="section-title">Core vocabulary</h2>
+          <p class="section-intro">Open a card when the term appears in a task. Learn the ownership boundary as well as the definition.</p>
+          <div class="terms">
+            <details open><summary>Workbench</summary><p>The engineering desktop application used to connect, build, wire, and commission. Closing Workbench does not stop a station.</p></details>
+            <details><summary>Station</summary><p>A running Niagara application and component database on a JACE or Supervisor. Logic runs here.</p></details>
+            <details><summary>Platform</summary><p>The host layer beneath a station: software, modules, licenses, certificates, backup, and restart.</p></details>
+            <details><summary>Component and Slot</summary><p>A Component is Niagara's addressable building block. A slot is one named property, action, or topic on it.</p></details>
+            <details><summary>ORD</summary><p>An Object Resolution Descriptor locates a station component, slot, file, or history record unambiguously.</p></details>
+            <details><summary>Proxy Extension</summary><p>The binding between a Niagara point component and an external field value. It carries reads and eligible writes.</p></details>
+            <details><summary>Wire Sheet and Link</summary><p>The visual logic canvas and the connections that carry values from output slots to input slots.</p></details>
+            <details><summary>Schedule</summary><p>A component producing a time-based effective value from weekly patterns, exceptions, and defaults.</p></details>
+            <details><summary>AlarmService</summary><p>The service owning alarm generation, state, classes, routing, recipients, and acknowledgement behavior.</p></details>
+            <details><summary>HistoryService</summary><p>The service owning collected time-series records. History Extensions define what and how to collect.</p></details>
+            <details><summary>Px page</summary><p>A bound visual page—equipment schematic, floor plan, or dashboard—used for operator interaction.</p></details>
+            <details><summary>Category, Role, Permission</summary><p>Category scopes what; Permission defines the allowed verb; Role bundles permissions for a user.</p></details>
+          </div>
+        </section>
+
+        <section id="kubernetes">
+          <div class="section-kicker">Bridge from what you know</div>
+          <h2 class="section-title">Niagara ↔ Kubernetes</h2>
+          <p class="section-intro">Useful analogies for recall—not claims that the platforms work identically.</p>
+          <div class="table-wrap">
+            <table class="compare">
+              <thead><tr><th>Niagara</th><th>Kubernetes bridge</th><th>Useful connection</th></tr></thead>
+              <tbody>
+                <tr><td>Supervisor</td><td>Control-plane viewpoint</td><td>Aggregates subordinate systems into one operational view; unlike Kubernetes, it is not a consensus control plane.</td></tr>
+                <tr><td>JACE station</td><td>Node + local runtime</td><td>Continues local control when the supervisory connection is lost.</td></tr>
+                <tr><td>Component / slot</td><td>API object / field</td><td>An addressable resource and its named properties, state, and actions.</td></tr>
+                <tr><td>Property Sheet</td><td><code>kubectl describe</code> / YAML</td><td>The inspect-and-edit view of one object's current configuration and status.</td></tr>
+                <tr><td>ORD</td><td>API resource path</td><td>A precise address for resolving a particular resource.</td></tr>
+                <tr><td>Wire Sheet</td><td>Visual control logic</td><td>Continuously running input → logic → output behavior; not literally a Kubernetes Operator.</td></tr>
+                <tr><td>Schedule</td><td>CronJob mental model</td><td>Time-driven behavior with exceptions that can supersede the normal pattern.</td></tr>
+                <tr><td>Alarm / History services</td><td>Alertmanager / Prometheus</td><td>Operational state, routing, and time-series evidence.</td></tr>
+                <tr><td>Category + Role</td><td>Scoped RBAC</td><td>Separates what is protected from which actions a subject may perform.</td></tr>
+                <tr><td>Station backup</td><td>etcd snapshot / Velero</td><td>Recoverable capture of system configuration before change.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="lab">
+          <div class="section-kicker">Honest capability map</div>
+          <h2 class="section-title">What BAS-SIM teaches today</h2>
+          <p class="section-intro">The current Niagara view is strong for observation and troubleshooting. Editing surfaces are the next learning layer.</p>
+          <div class="coverage">
+            <article class="card"><div class="icon">NAV</div><div><h3>Navigation and ORDs</h3><p>Browse Supervisor → JACE → equipment → points and inspect addresses.</p><span class="limit">Synthetic tree, not a Fox session</span></div></article>
+            <article class="card"><div class="icon">PTS</div><div><h3>Property Sheets and commands</h3><p>Read live metadata, status, overrides, and command eligible lab points.</p><span class="limit">Self-declared roles, not production auth</span></div></article>
+            <article class="card"><div class="icon">SCH</div><div><h3>Schedules</h3><p>Resolve weekly patterns, exceptions, effective values, and linked baselines.</p><span class="limit">Browser editing not implemented</span></div></article>
+            <article class="card"><div class="icon">WS</div><div><h3>Wire Sheets</h3><p>Watch blocks and links evaluate against live point and schedule context.</p><span class="limit">Read-only; cannot place or link</span></div></article>
+            <article class="card"><div class="icon">PX</div><div><h3>Px graphics</h3><p>View a bound RTU schematic whose widgets resolve current values.</p><span class="limit">Read-only; cannot place or bind</span></div></article>
+            <article class="card"><div class="icon">HIS</div><div><h3>Alarms and histories</h3><p>Navigate current alarms and inspect generated point trends.</p><span class="limit">Extension configuration is not modeled</span></div></article>
+            <article class="card"><div class="icon">PLT</div><div><h3>Platform and backup</h3><p>Inspect synthetic station hosts and create a real lab configuration snapshot.</p><span class="limit">Restore and module actions not exposed</span></div></article>
+            <article class="card"><div class="icon">BAS</div><div><h3>Troubleshooting</h3><p>Diagnose portfolio faults and inspect causal Building 822 behavior.</p><span class="limit">Complements Niagara; not a Niagara feature</span></div></article>
+          </div>
+        </section>
+
+        <section id="practice">
+          <div class="section-kicker">Repeat until automatic</div>
+          <h2 class="section-title">The mastery loop</h2>
+          <p class="section-intro">Use the same evidence-driven loop for every topic. Finishing at “I clicked it” is not mastery.</p>
+          <div class="loop">
+            <div><strong>Identify</strong>Name the component and which station owns it.</div>
+            <div><strong>Inspect</strong>Read its ORD, slots, facets, status, inputs, and outputs.</div>
+            <div><strong>Build</strong>Create or change the smallest relevant artifact.</div>
+            <div><strong>Prove</strong>Observe runtime behavior, not merely saved configuration.</div>
+            <div><strong>Break</strong>Remove one dependency and diagnose the downstream symptom.</div>
+            <div><strong>Recover</strong>Back up, document, restore, or roll back safely.</div>
+            <div><strong>Explain</strong>Answer ownership, resolution, failure, and evidence questions without the UI.</div>
+          </div>
+        </section>
+
+        <section id="troubleshooting">
+          <div class="section-kicker">DDC evidence meets mechanical reality</div>
+          <h2 class="section-title">Troubleshoot the system, not the screen</h2>
+          <p class="section-intro">An excellent DDC technician understands the entire cause-and-effect chain. The BAS tells you what the controller knows or believes; field measurements prove what the equipment actually did.</p>
+
+          <div class="evidence-chain">
+            <code>command → electrical output → actuator travel → fluid/air movement → heat transfer → sensor response → BAS display</code>
+          </div>
+
+          <div class="diagnostic-grid">
+            <article class="card"><span class="step-label">Layer 01</span><h3>Start with the complaint</h3><p>Define what is wrong, where, when, and under what load. “Warm” is not yet a diagnosis.</p></article>
+            <article class="card"><span class="step-label">Layer 02</span><h3>Read the sequence</h3><p>State what should be enabled, what should modulate, and which safeties can stop it.</p></article>
+            <article class="card"><span class="step-label">Layer 03</span><h3>Check command versus proof</h3><p>A command proves intent. Status, current, travel, pressure, and flow provide separate kinds of proof.</p></article>
+            <article class="card"><span class="step-label">Layer 04</span><h3>Follow the energy</h3><p>Trace air, water, refrigerant, heat, and electrical power. Find where the expected transfer stops.</p></article>
+            <article class="card"><span class="step-label">Layer 05</span><h3>Test one hypothesis</h3><p>Choose the next observation that best separates competing causes. Do not fire the parts cannon.</p></article>
+            <article class="card"><span class="step-label">Layer 06</span><h3>Prove the repair</h3><p>Remove temporary overrides, allow stabilization, verify the original symptom, and document evidence.</p></article>
+          </div>
+
+          <p class="callout safety"><strong>Safety boundary:</strong> standing water around pumps, starters, disconnects, or energized equipment is an electrical and mechanical hazard. Follow site emergency, isolation, LOTO, and escalation procedures before approaching or testing it. Training logic never authorizes unsafe field access.</p>
+        </section>
+
+        <section id="questions">
+          <div class="section-kicker">Think first, then reveal</div>
+          <h2 class="section-title">Field scenario drills</h2>
+          <p class="section-intro">For each case, say your likely causes, the first safe checks, and the evidence that would separate them. Then open the answer. These test reasoning—not memorized fault names.</p>
+
+          <div class="scenario-list">
+            <details class="scenario">
+              <summary><span class="tag">Field case</span><span class="prompt">The chiller is off on low flow. The GPM meter reads 0. The pump status says running. The pump room is full of water. What could be happening?</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>What the data proves</b><p>The controller commanded or proved a running state, but the flow instrument sees no circulation and the chiller's flow safety is doing its job.</p></div>
+                <div class="answer-box"><b>Likely cause families</b><p>Major leak or failed isolation/check valve; broken coupling or damaged impeller; closed valve; lost prime/air binding; failed flow meter; or false pump-status proof.</p></div>
+                <div class="answer-box"><b>First response</b><p>Treat the flooded room as the controlling evidence. Follow emergency isolation and LOTO procedures, identify the leak from a safe position, then verify pump rotation, valve position, differential pressure, and independent flow.</p></div>
+              </div><p style="margin-top:12px"><strong>Actual finding:</strong> the valve at the pump had rusted through and was leaking. The lesson is not “zero GPM means rusty valve”; it is that run status never proves intact piping or delivered flow.</p></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">Field case</span><span class="prompt">A packaged unit loses capacity and trips as load rises. A trash bag is found plastered across the outdoor coil. Explain the BAS evidence you would expect.</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Physical mechanism</b><p>Blocked condenser airflow reduces heat rejection. Condensing temperature and pressure rise, compressor work rises, and available cooling capacity falls.</p></div>
+                <div class="answer-box"><b>Likely evidence</b><p>Supply temperature drifts high, cooling command saturates, compressor capacity/current may rise, condenser approach worsens, and a high-pressure or condenser diagnostic may occur.</p></div>
+                <div class="answer-box"><b>Proof</b><p>Inspect the coil and fan path, remove the obstruction safely, confirm coil condition and fan operation, then trend leaving temperature and capacity through recovery.</p></div>
+              </div><p style="margin-top:12px">A controls-only response might retune the loop or lower a setpoint. Neither restores heat rejection. Always ask where the heat is supposed to go.</p></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">Field case</span><span class="prompt">Unit 4 has excessive airflow. Space temperature is acceptable, but humidity remains high. Why can reducing airflow improve dehumidification?</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Physical mechanism</b><p>At excessive airflow, coil contact time falls and the finite coil must handle more air mass. Leaving-air temperature may stay above the effective dew point, reducing latent removal.</p></div>
+                <div class="answer-box"><b>Evidence to compare</b><p>CFM/static pressure, fan speed, entering/leaving dry bulb and RH, calculated dew point, CHW temperature/flow, valve position, and condensate production.</p></div>
+                <div class="answer-box"><b>Do not assume</b><p>High humidity can also result from warm CHW, poor valve authority, dirty or air-bound coil, outdoor-air excess, infiltration, failed reheat sequence, or sensor bias.</p></div>
+              </div><p style="margin-top:12px">The best answer connects airflow to coil capacity and dew point, then verifies competing causes. “More air is always better” is false for latent performance.</p></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">DDC signal chain</span><span class="prompt">The BAS commands a CHW valve to 100% and displays 96% feedback, but supply air stays warm. What should you check next?</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Leading hypotheses</b><p>Lying feedback or slipped linkage; no CHW flow; warm entering water; blocked/air-bound/fouled coil; incorrect piping; or biased temperature sensing.</p></div>
+                <div class="answer-box"><b>High-value checks</b><p>Measure actuator output signal, physically verify stem/travel, measure entering/leaving water and air temperatures, and verify differential pressure or flow.</p></div>
+                <div class="answer-box"><b>Core lesson</b><p>Command, feedback, physical travel, fluid flow, and heat transfer are five different facts. One cannot substitute for the others.</p></div>
+              </div></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">Niagara</span><span class="prompt">A point is correct at the field controller but stale on a Px graphic. Where do you troubleshoot?</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Walk the chain</b><p>Device health → Network/driver health → proxy status and tuning policy → station logic/link → Px binding ORD → Supervisor/JACE connection.</p></div>
+                <div class="answer-box"><b>Useful clues</b><p>Proxy status, last update, fault text, device status, subscription/poll behavior, and whether the Property Sheet is stale too.</p></div>
+                <div class="answer-box"><b>Isolation logic</b><p>If the Property Sheet is current but Px is stale, look above the proxy. If both are stale, look at the proxy, network, device, or field source.</p></div>
+              </div></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">Hydronics</span><span class="prompt">Pump command and status are on, differential pressure is low, valves are opening, and remote coils are warm. What separates a pump problem from a system restriction?</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Pump evidence</b><p>Verify speed command versus actual speed, motor current, rotation, suction/discharge pressure, coupling, impeller condition, and available suction head.</p></div>
+                <div class="answer-box"><b>Restriction evidence</b><p>Measure pressure on both sides of strainers, valves, and suspect sections. A localized high pressure drop identifies where energy is being lost.</p></div>
+                <div class="answer-box"><b>Reasoning</b><p>Low system DP is a symptom. Pressure distribution—not run status alone—separates weak pumping from excessive resistance or an open bypass.</p></div>
+              </div></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">Controls</span><span class="prompt">A zone oscillates between hot and cold. The actuator repeatedly drives from near 0% to near 100%. Name three cause families before changing PID gains.</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Mechanical</b><p>Oversized valve, poor valve authority, sticking actuator, unstable plant temperature/pressure, or excessive equipment capacity.</p></div>
+                <div class="answer-box"><b>Sensing and timing</b><p>Bad sensor location, sensor noise/bias, fast sampling against slow thermal mass, missing actuator slew, or transport delay.</p></div>
+                <div class="answer-box"><b>Logic</b><p>Wrong action direction, deadband error, integral windup, competing loops, schedule/override conflict, or badly tuned gains.</p></div>
+              </div><p style="margin-top:12px">PID tuning is not the first move until the valve, sensor, plant, and sequence are proven capable of stable control.</p></div>
+            </details>
+
+            <details class="scenario">
+              <summary><span class="tag">Closeout</span><span class="prompt">The equipment looks normal immediately after repair. What evidence is required before closing the call?</span></summary>
+              <div class="answer"><div class="answer-grid">
+                <div class="answer-box"><b>Original symptom</b><p>Prove the complaint is resolved under a meaningful operating condition—not merely that the alarm cleared.</p></div>
+                <div class="answer-box"><b>System recovery</b><p>Allow thermal and hydronic stabilization; trend command, feedback, process value, setpoint, and relevant upstream conditions.</p></div>
+                <div class="answer-box"><b>Control state</b><p>Release temporary overrides, confirm normal priority/control ownership, record corrective and preventive actions, and note remaining risk.</p></div>
+              </div></div>
+            </details>
+          </div>
+        </section>
+
+        <section id="outcomes">
+          <div class="section-kicker">Level 1 exit criteria</div>
+          <h2 class="section-title">Can you do this without a recipe?</h2>
+          <div class="checklist">
+            <div class="check-item">Navigate Platform versus Station contexts and explain why they are separate.</div>
+            <div class="check-item">Create or restore a station backup before an engineering change.</div>
+            <div class="check-item">Discover a device, import a proxy point, set facets, and verify live status.</div>
+            <div class="check-item">Build occupied/unoccupied scheduling with a dated exception.</div>
+            <div class="check-item">Build and troubleshoot a small Wire Sheet with logic, selection, and an output.</div>
+            <div class="check-item">Add an alarm and history extension, then prove each produces a record.</div>
+            <div class="check-item">Build a Px equipment graphic and distinguish command, status, and feedback.</div>
+            <div class="check-item">Create least-privilege access and test one allowed and one denied action.</div>
+            <div class="check-item">Trace a stale point from field device through driver, proxy, logic, and graphic.</div>
+            <div class="check-item">Explain the same tasks in scenario form without relying on button memory.</div>
+          </div>
+        </section>
+
+        <footer>
+          <p><strong>Practice:</strong> <code>http://localhost:8001/niagara</code> · <strong>Source:</strong> <code>docs/niagara.md</code></p>
+          <p>Official references: <a href="https://www.tridiumuniversity.com/student/catalog/list?category_ids=43822-amer-certification-courses">Tridium certification catalog</a> · <a href="https://www.tridiumuniversity.com/student/page/3342702-tridium-amer-ilt-agendas">TCP course agendas</a></p>
+          <p>This project is an independent synthetic training lab. It is not affiliated with, endorsed by, or a substitute for Tridium or an authorized Niagara certification provider.</p>
+        </footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

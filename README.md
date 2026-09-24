@@ -103,6 +103,38 @@ where one masks the other. Your record accumulates in
 `BREAK/call-log.md`. **Requires the docker stack running** for the
 live-break menu.
 
+### 4. Design projects (AI agent required)
+
+The other half of the job: not fixing the building — engineering it.
+An AI agent plays senior engineer / EOR: it issues a project brief
+(a renovation or addition to one of the two buildings, with
+owner-furnished drawings that are wrong in places), you survey the live
+lab against the drawings, produce the engineering package — points
+list, sequence of operations, valve/damper schedule, BOM, panel layout,
+network riser — and carry it through submittal review to approval.
+Revise-and-resubmit, RFIs, honest disposition codes.
+
+Open your AI agent CLI at this repo's root and paste
+`ai-dev-prompts/6-design-project.md` — or just say:
+
+```
+Read DESIGN/DESIGN.md and follow it. New project, level 1.
+```
+
+Three briefs ship with the lab (levels 1–3); the rulebook also lets the
+agent author new ones. Your record accumulates in `DESIGN/review-log.md`.
+Self-QA any submittal with `python3 scripts/validate-submittal.py
+DESIGN/submittals/P-XX/rev-A`. The docker stack is optional here — the
+front ends are enough for site surveys.
+
+**Approved designs get built.** Once a package is stamped APPROVED,
+`python3 scripts/merge-submittal.py DESIGN/submittals/P-XX/rev-N --apply`
+merges your equipment, points, and alarms into the live inventories
+(backup and merge log included; dry run without `--apply`). Re-run the
+simulator and your equipment appears in the front ends, trends, alarms —
+and can take trouble calls and 2AM breaks like everything you didn't
+design.
+
 ---
 
 ## The Buildings
@@ -124,6 +156,7 @@ live-break menu.
 | `frontend/` | FastAPI backend + Metasys/Niagara/landing HTML (no build tools, no CDN) |
 | `open-source-stack/` | Docker pipeline: Mosquitto, InfluxDB, Grafana, Node-RED + BACnet device & Influx bridge |
 | `BREAK/` | The 2AM Call game: `BREAK.md` (agent rulebook), `sealed/` (hidden answers), `call-log.md` |
+| `DESIGN/` | The design-assist track: `DESIGN.md` (EOR rulebook), `briefs/`, `sealed/` (rubrics), `templates/`, `submittals/`, `review-log.md` |
 | `ai-dev-prompts/` | **Copy-paste prompts for any AI agent** — setup/deploy, play the 2AM game, repair the lab, add your own war-story fault, teardown |
 | `sequences/` | Synthetic sequences of operation per equipment |
 | `bas_console.py` | Terminal CLI client for the same API |

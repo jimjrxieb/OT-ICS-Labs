@@ -1,0 +1,26 @@
+[
+  {
+    "point": "VAV601_TEMP",
+    "equipment": "VAV-601",
+    "type": "AI",
+    "units": "F",
+    "normal_min": 70,
+    "normal_max": 76,
+    "writable": false,
+    "critical": false,
+    "trend_interval_sec": 300,
+    "facility": "office"
+  },
+  {
+    "point": "VAV601_TEMP_SP",
+    "equipment": "VAV-601",
+    "type": "AV",
+    "units": "F",
+    "normal_min": 70,
+    "normal_max": 76,
+    "writable": true,
+    "critical": false,
+    "trend_interval_sec": 300,
+    "facility": "office"
+  }
+]

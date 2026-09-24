@@ -123,6 +123,11 @@ canvas#sparkline { display: block; background: #fff; border: 1px solid #c8d0da; 
       <div class="nav-item l3" onclick="filterEquip('AHU-ICU-1')" id="nav-AHU-ICU-1">&#x25A1; AHU-ICU-1 (JCI)</div>
       <div class="nav-item l3" onclick="filterEquip('VAV-OR-101')" id="nav-VAV-OR-101">&#x25A1; VAV-OR-101 (JCI)</div>
       <div class="nav-item l3" onclick="filterEquip('CHW-PLANT-1')" id="nav-CHW-PLANT-1">&#x25A1; CHW-PLANT-1</div>
+      <div class="nav-item l3" onclick="filterEquip('CHILLER-HOSP-1')" id="nav-CHILLER-HOSP-1">&#x25A1; CHILLER-HOSP-1 (Trane, lead)</div>
+      <div class="nav-item l3" onclick="filterEquip('CHILLER-HOSP-2')" id="nav-CHILLER-HOSP-2">&#x25A1; CHILLER-HOSP-2 (Trane, standby)</div>
+      <div class="nav-item l3" onclick="filterEquip('CWP-1')" id="nav-CWP-1">&#x25A1; CWP-1</div>
+      <div class="nav-item l3" onclick="filterEquip('CWP-2')" id="nav-CWP-2">&#x25A1; CWP-2</div>
+      <div class="nav-item l3" onclick="filterEquip('COOLING-TOWER-1')" id="nav-COOLING-TOWER-1">&#x25A1; COOLING-TOWER-1 (BAC, 2-cell)</div>
       <div class="nav-item l3" onclick="filterEquip('HW-PLANT-1')" id="nav-HW-PLANT-1">&#x25A1; HW-PLANT-1</div>
       <div class="nav-item l2">&#9654; Integration (JACE-OT-01)</div>
       <div class="nav-item l3" onclick="filterEquip('RM-ISO-201')" id="nav-RM-ISO-201">&#x25A1; RM-ISO-201 (Tridium)</div>
@@ -336,6 +341,12 @@ async function loadPoints() {
   try {
     const res = await fetch('/api/points');
     allPointsData = await res.json();
+    // Building 822 is a Trane site with its own front end at /tracer. It shares
+    // this API but must not appear in this JCI Metasys view. Filter at the
+    // boundary so every downstream render stays clean.
+    allPointsData.equipment = Object.fromEntries(
+      Object.entries(allPointsData.equipment || {})
+        .filter(([, pts]) => (pts[0] || {}).facility !== 'barracks822'));
     document.getElementById('scenario-badge').textContent = 'Scenario: ' + (allPointsData.scenario || '—');
     const ts = allPointsData.generated_at ? new Date(allPointsData.generated_at).toLocaleString() : '—';
     document.getElementById('points-meta').textContent =
