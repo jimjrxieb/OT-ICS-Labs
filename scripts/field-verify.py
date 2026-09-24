@@ -109,6 +109,27 @@ def _valve_equipment(truth: dict[str, float]) -> list[str]:
     return sorted(k.removesuffix("_CHW_VLV_PHYSICAL") for k in truth if k.endswith("_CHW_VLV_PHYSICAL"))
 
 
+PLANT_TRUTH_KEYS = (
+    "CHW822_LOOP_PSIG_PHYSICAL", "CHW822_P1_AMPS_PHYSICAL", "CHW822_P2_AMPS_PHYSICAL",
+    "CHW822_P1_TDV_LEAK_GPM_PHYSICAL", "CHW822_P1_TDV_FAILED_PHYSICAL", "PUMPROOM_WATER_GAL_PHYSICAL",
+)
+
+
+def _missing_plant_keys(truth: dict[str, float]) -> list[str]:
+    return [k for k in PLANT_TRUTH_KEYS if k not in truth]
+
+
+def _plant_truth() -> dict[str, float]:
+    """Ground truth for the plant instruments. A truth file written before the
+    plant model existed lacks these keys -- say how to fix it, don't traceback."""
+    truth = _load_json(OUTPUT_DIR / ".822-ground-truth.json")
+    if _missing_plant_keys(truth):
+        raise SystemExit(
+            "No plant ground truth recorded yet -- run the simulator first: "
+            "python3 simulator/bas_sim.py --scenario normal --steps 12")
+    return truth
+
+
 def gauge_reading(truth: dict[str, float]) -> str:
     return f"Pump suction gauge reads {truth['CHW822_LOOP_PSIG_PHYSICAL']:.1f} psig."
 
@@ -176,6 +197,10 @@ def self_test() -> int:
         "P1_TDV: corrosion through the valve body; not leaking right now (no pressure behind it)."
     assert valve_inspection(leaking, "P2_TDV") == "P2_TDV: body dry, no visible corrosion."
 
+    # Instruments must refuse a truth file that predates the plant model, not traceback.
+    assert _missing_plant_keys(healthy) == []
+    assert _missing_plant_keys({"MAU04_CHW_VLV_PHYSICAL": 40.0}) == list(PLANT_TRUTH_KEYS)
+
     # verify-travel's "known equipment" list must ignore the new plant keys.
     assert _valve_equipment(healthy) == ["MAU04"]
     print("field-verify self-test passed")
@@ -196,15 +221,15 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("equipment", help="e.g. MAU04")
         p.set_defaults(run=lambda a, fn=fn: fn(a.equipment))
     sub.add_parser("read-gauge", help="Loop pressure at the pump suction (field gauge)").set_defaults(
-        run=lambda a: print(gauge_reading(_load_json(OUTPUT_DIR / ".822-ground-truth.json"))))
+        run=lambda a: print(gauge_reading(_plant_truth())))
     p = sub.add_parser("clamp-amps", help="Clamp meter on a CHW pump motor")
     p.add_argument("pump", choices=("P1", "P2"))
-    p.set_defaults(run=lambda a: print(amps_reading(_load_json(OUTPUT_DIR / ".822-ground-truth.json"), a.pump)))
+    p.set_defaults(run=lambda a: print(amps_reading(_plant_truth(), a.pump)))
     sub.add_parser("walk-pumproom", help="Walk into the pump room and look").set_defaults(
-        run=lambda a: print(pumproom_walk(_load_json(OUTPUT_DIR / ".822-ground-truth.json"))))
+        run=lambda a: print(pumproom_walk(_plant_truth())))
     p = sub.add_parser("inspect-valve", help="Look at a CHW branch valve body")
     p.add_argument("valve", choices=("P1_TDV", "P2_TDV"))
-    p.set_defaults(run=lambda a: print(valve_inspection(_load_json(OUTPUT_DIR / ".822-ground-truth.json"), a.valve)))
+    p.set_defaults(run=lambda a: print(valve_inspection(_plant_truth(), a.valve)))
     args = parser.parse_args(argv)
     args.run(args)
     return 0
