@@ -8,6 +8,7 @@
   "max_wait_min": 60,
   "stabilization_window_min": 20,
   "supply_band_f": 2.0,
+  "local_display_prefixes": ["RTAC822_"],
   "actions": [
     {"action_id": "pin_point", "label": "Record a BAS point's current value", "group": "look", "time_cost_min": 0, "evidence_type": "bas_value", "effect": "pin_point", "params": {"point": "*"}, "roles": ["technician"]},
     {"action_id": "chiller_panel", "label": "Walk out to the chiller and read its panel", "group": "look", "time_cost_min": 5, "evidence_type": "visual_inspection", "effect": "observe_chiller_panel", "roles": ["technician"]},

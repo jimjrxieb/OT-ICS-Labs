@@ -47,14 +47,23 @@ class SessionClosed(ValueError):
 
 def load_scenario(scenario_id: str, directory: Path = SCENARIO_DIR) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load and validate a case's trainee-safe definition and instructor file."""
-    if not isinstance(scenario_id, str) or not _SCENARIO_ID.match(scenario_id):
+    if not isinstance(scenario_id, str) or not _SCENARIO_ID.fullmatch(scenario_id):
         raise ValueError(f"invalid scenario id {scenario_id!r}")
-    definition = json.loads((directory / f"{scenario_id}.json").read_text(encoding="utf-8"))
-    truth = json.loads((directory / f"{scenario_id}.instructor.json").read_text(encoding="utf-8"))
+    try:
+        definition = json.loads((directory / f"{scenario_id}.json").read_text(encoding="utf-8"))
+        truth = json.loads((directory / f"{scenario_id}.instructor.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ValueError(f"unknown scenario {scenario_id!r}")
     errors = validate_scenario(definition, truth)
     if errors:
         raise ValueError(f"scenario {scenario_id} is invalid: " + "; ".join(errors))
     return definition, truth
+
+
+def _checked_actor(value: Any, label: str = "actor") -> str:
+    if not isinstance(value, str) or not value or len(value) > 64:
+        raise ValueError(f"{label} must be a non-empty string of at most 64 characters")
+    return value
 
 
 def _validate_action(a: dict[str, Any]) -> list[str]:
@@ -116,6 +125,10 @@ def validate_scenario(definition: dict[str, Any], truth: dict[str, Any]) -> list
         errors.append("leak_gpm_range must be [low, high] with 0 < low <= high")
     if truth["pre_shift_leak_min"] <= 0 or truth["healthy_warmup_min"] < 0:
         errors.append("healthy_warmup_min must be >= 0 and pre_shift_leak_min > 0")
+    prefixes = definition.get("local_display_prefixes")
+    if prefixes is not None and not (
+            isinstance(prefixes, list) and all(isinstance(p, str) and p for p in prefixes)):
+        errors.append("local_display_prefixes must be a list of non-empty strings")
     seen: set[str] = set()
     for action in definition["actions"]:
         aid = action.get("action_id")
@@ -173,7 +186,8 @@ def _advance(session: dict[str, Any], minutes: int) -> None:
         if loop["p1_deadhead"]:
             session["events"]["deadhead_min"] += 1
         holding = (not session["lineup"]["makeup_valve_open"]
-                   and st["chw"]["loop_psig"] >= t["LOOP_FILL_PSIG"] - 1.0)
+                   and st["chw"]["loop_psig"] >= t["LOOP_FILL_PSIG"] - 1.0
+                   and loop["leak_gpm"] == 0.0)
         producing = not cs["tripped"] and cs["restart_min"] <= 0
         in_band = abs(pts["CHW822_ENT_SUP_TEMP"] - t["CHW_SETPOINT_F"]) <= session["supply_band_f"]
         steady = (holding and producing and in_band and not loop["p1_deadhead"]
@@ -195,6 +209,8 @@ def new_session(definition: dict[str, Any], truth: dict[str, Any], seed: int,
                 session_id: str = "S-001-local") -> dict[str, Any]:
     """Build the building as the trainee finds it at the start of the shift:
     healthy warmup, then the hidden cause running for pre_shift_leak_min."""
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an int")
     rng = random.Random(seed)
     low, high = truth["leak_gpm_range"]
     session: dict[str, Any] = {
@@ -219,6 +235,7 @@ def new_session(definition: dict[str, Any], truth: dict[str, Any], seed: int,
 def wait(session: dict[str, Any], definition: dict[str, Any], minutes: int, actor: str) -> dict[str, Any]:
     if session["terminal"]:
         raise SessionClosed(f"session is {session['terminal']}")
+    actor = _checked_actor(actor)
     limit = definition["max_wait_min"]
     if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= limit:
         raise ValueError(f"minutes must be an integer from 1 to {limit}")
@@ -239,7 +256,8 @@ def _action(definition: dict[str, Any], action_id: str) -> dict[str, Any]:
     raise ValueError(f"unknown action {action_id!r}")
 
 
-def _checked_params(session: dict[str, Any], action: dict[str, Any], params: Any) -> dict[str, str]:
+def _checked_params(session: dict[str, Any], definition: dict[str, Any], action: dict[str, Any],
+                     params: Any) -> dict[str, str]:
     if not isinstance(params, dict):
         raise ValueError("params must be an object")
     spec, fixed = action.get("params", {}), action.get("fixed_params", {})
@@ -255,13 +273,14 @@ def _checked_params(session: dict[str, Any], action: dict[str, Any], params: Any
         if not isinstance(value, str):
             raise ValueError(f"parameter {name!r} is required")
         if allowed == "*":
-            if value not in session["pts"]:
+            local_only = any(value.startswith(p) for p in definition.get("local_display_prefixes", []))
+            if value not in session["pts"] or local_only:
                 raise ValueError(f"unknown point {value!r}")
         elif value not in allowed:
             raise ValueError(f"parameter {name!r} must be one of {allowed}")
         clean[name] = value
     clean.update(fixed)
-    return clean
+    return json.loads(json.dumps(clean))
 
 
 def _hazardous(session: dict[str, Any], action: dict[str, Any], params: dict[str, str]) -> bool:
@@ -283,10 +302,12 @@ def act(session: dict[str, Any], definition: dict[str, Any], action_id: str,
     session), then advance the clock by the action's time cost and apply it."""
     if session["terminal"]:
         raise SessionClosed(f"session is {session['terminal']}")
+    actor = _checked_actor(actor)
+    role = _checked_actor(role, "role")
     action = _action(definition, action_id)
     if role not in action["roles"]:
         raise PermissionError(f"role {role!r} may not perform {action_id!r}")
-    clean = _checked_params(session, action, params)
+    clean = _checked_params(session, definition, action, params)
     base = {"kind": "action", "action_id": action_id, "params": clean, "actor": actor, "role": role,
             "evidence_type": action["evidence_type"], "safety": action.get("safety", "safe"),
             "prerequisites": list(action.get("prerequisites", []))}
@@ -326,7 +347,9 @@ def criteria(session: dict[str, Any], definition: dict[str, Any]) -> list[dict[s
     band, window = definition["supply_band_f"], definition["stabilization_window_min"]
     return [
         {"id": "loop_pressure", "label": "Loop holding fill pressure with the fill valve closed",
-         "passed": not session["lineup"]["makeup_valve_open"] and st["chw"]["loop_psig"] >= t["LOOP_FILL_PSIG"] - 1.0},
+         "passed": (not session["lineup"]["makeup_valve_open"]
+                    and st["chw"]["loop_psig"] >= t["LOOP_FILL_PSIG"] - 1.0
+                    and st["_loop"]["leak_gpm"] == 0.0)},
         {"id": "no_air", "label": "No air in the chilled-water loop",
          "passed": st["chw"]["air_frac"] == 0.0},
         {"id": "flow_proven", "label": f"Chilled-water flow proven (at least {t['EVAP_MIN_FLOW_FRAC']:.0%} of design)",
@@ -387,10 +410,13 @@ def _validate_closeout(session: dict[str, Any], fields: Any, citations: Any) -> 
         for key, ids in citations.items():
             if key not in CLOSEOUT_FIELDS:
                 errors.append(f"citation for unknown field {key!r}")
-            elif isinstance(ids, list):
-                bad = [i for i in ids if i not in evidence]
-                if bad:
-                    errors.append(f"{key!r} cites records that are not evidence in this session: {bad}")
+                continue
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                errors.append(f"citation for {key!r} must be a list of strings")
+                continue
+            bad = [i for i in ids if i not in evidence]
+            if bad:
+                errors.append(f"{key!r} cites records that are not evidence in this session: {bad}")
     if errors:
         raise ValueError("; ".join(errors))
 
@@ -402,9 +428,12 @@ def closeout(session: dict[str, Any], definition: dict[str, Any], fields: dict[s
     stays open."""
     if session["terminal"]:
         raise SessionClosed(f"session is {session['terminal']}")
+    actor = _checked_actor(actor)
     _validate_closeout(session, fields, citations)
     results = criteria(session, definition)
     passed = all(c["passed"] for c in results)
+    fields = json.loads(json.dumps(fields))
+    citations = json.loads(json.dumps(citations))
     session["closeout"] = {"fields": fields, "citations": citations}
     session["verification"] = results
     if passed:
@@ -413,28 +442,41 @@ def closeout(session: dict[str, Any], definition: dict[str, Any], fields: dict[s
                    outcome="closed" if passed else "failed_verification", verification=results)
 
 
+MAX_HYPOTHESES = 20
+
+
 def set_hypotheses(session: dict[str, Any], hypotheses: list[dict[str, Any]], actor: str) -> dict[str, Any]:
     if session["terminal"]:
         raise SessionClosed(f"session is {session['terminal']}")
+    actor = _checked_actor(actor)
     if not isinstance(hypotheses, list):
         raise ValueError("hypotheses must be a list")
+    if len(hypotheses) > MAX_HYPOTHESES:
+        raise ValueError(f"at most {MAX_HYPOTHESES} hypotheses are allowed")
     ids = {r["record_id"] for r in session["records"]}
+    clean: list[dict[str, Any]] = []
     for h in hypotheses:
         if not isinstance(h, dict) or not isinstance(h.get("text"), str) or not 0 < len(h["text"].strip()) <= 500:
             raise ValueError("each hypothesis needs text of 1-500 characters")
         if h.get("status") not in HYPOTHESIS_STATUS:
             raise ValueError(f"hypothesis status must be one of {list(HYPOTHESIS_STATUS)}")
+        refs_clean: dict[str, list[str]] = {}
         for key in ("supporting", "contradicting"):
             refs = h.get(key, [])
-            if not isinstance(refs, list) or any(ref not in ids for ref in refs):
+            if not isinstance(refs, list) or not all(isinstance(ref, str) for ref in refs):
+                raise ValueError(f"hypothesis {key} must be a list of record ids")
+            if any(ref not in ids for ref in refs):
                 raise ValueError(f"hypothesis {key} must reference records in this session")
-    session["hypotheses"] = hypotheses
-    return _record(session, kind="hypotheses", hypotheses=hypotheses, actor=actor)
+            refs_clean[key] = refs
+        clean.append({"text": h["text"], "status": h["status"], **refs_clean})
+    session["hypotheses"] = json.loads(json.dumps(clean))
+    return _record(session, kind="hypotheses", hypotheses=session["hypotheses"], actor=actor)
 
 
 def abandon(session: dict[str, Any], actor: str) -> dict[str, Any]:
     if session["terminal"]:
         raise SessionClosed(f"session is {session['terminal']}")
+    actor = _checked_actor(actor)
     session["terminal"] = "ABANDONED"
     return _record(session, kind="abandon", actor=actor)
 
@@ -500,23 +542,34 @@ def replay(definition: dict[str, Any], truth: dict[str, Any], session: dict[str,
     problems: list[str] = []
     for rec in session["records"]:
         kind = rec["kind"]
-        if kind == "action":
-            act(fresh, definition, rec["action_id"], rec["params"], rec["actor"], rec["role"])
-        elif kind == "wait":
-            wait(fresh, definition, rec["minutes"], rec["actor"])
-        elif kind == "hypotheses":
-            set_hypotheses(fresh, rec["hypotheses"], rec["actor"])
-        elif kind == "closeout":
-            closeout(fresh, definition, rec["fields"], rec["citations"], rec["actor"])
-        elif kind == "abandon":
-            abandon(fresh, rec["actor"])
-        else:
+        if kind not in ("action", "wait", "hypotheses", "closeout", "abandon"):
             problems.append(f"{rec['record_id']}: unknown record kind {kind!r}")
             break
-        if fresh["records"][-1]["state_hash"] != rec["state_hash"]:
+        try:
+            if kind == "action":
+                act(fresh, definition, rec["action_id"], rec["params"], rec["actor"], rec["role"])
+            elif kind == "wait":
+                wait(fresh, definition, rec["minutes"], rec["actor"])
+            elif kind == "hypotheses":
+                set_hypotheses(fresh, rec["hypotheses"], rec["actor"])
+            elif kind == "closeout":
+                closeout(fresh, definition, rec["fields"], rec["citations"], rec["actor"])
+            elif kind == "abandon":
+                abandon(fresh, rec["actor"])
+        except (SessionClosed, ValueError, PermissionError, KeyError, TypeError) as exc:
+            problems.append(f"{rec['record_id']}: cannot re-apply ({exc})")
+            break
+        fresh_rec = fresh["records"][-1]
+        if fresh_rec["state_hash"] != rec["state_hash"]:
             problems.append(f"{rec['record_id']}: state hash differs")
+        stored = {k: v for k, v in rec.items() if k != "wall_time"}
+        rebuilt = {k: v for k, v in fresh_rec.items() if k != "wall_time"}
+        if rebuilt != stored:
+            problems.append(f"{rec['record_id']}: record differs")
         if on_step is not None:
             on_step(fresh)
+    if fresh["terminal"] != session["terminal"]:
+        problems.append("terminal state differs")
     return problems
 
 
@@ -752,6 +805,173 @@ def self_test() -> int:
     assert_no_leak(messages, "messages")
     # Positive control: the boundary check does catch the cause when it is there.
     assert truth["hidden_cause"].lower() in json.dumps(debrief(s, definition, truth)).lower()
+
+    # --- Final review fixes ---------------------------------------------------------
+    # F1: chiller points are local-display only, not on the BAS.
+    probe1 = fresh(31)
+    try:
+        act(probe1, definition, "pin_point", {"point": "RTAC822_ACTIVE_DIAG"}, "t1", T)
+        raise AssertionError("pinned a local-display-only chiller point")
+    except ValueError:
+        pass
+    assert "LowEvapFlow" in act(probe1, definition, "chiller_panel", {}, "t1", T)["observation"]
+    assert any("local_display_prefixes" in e
+               for e in broken(lambda d, t: d.update(local_display_prefixes=[""])))
+
+    # F2: replay verifies the whole log, not only model-state hashes.
+    pinned = fresh(37)
+    act(pinned, definition, "pin_point", {"point": "CHW822_GPM"}, "t1", T)
+
+    swapped = json.loads(json.dumps(s))
+    rec = next(r for r in swapped["records"] if r["action_id"] == "walk_pumproom")
+    rec["action_id"] = "chiller_panel"
+    assert replay(definition, truth, swapped), "a swapped action_id must be detected"
+
+    obs_edit = json.loads(json.dumps(pinned))
+    rec = next(r for r in obs_edit["records"] if r["action_id"] == "pin_point")
+    rec["observation"] = "tampered observation"
+    assert replay(definition, truth, obs_edit), "a tampered observation must be detected"
+
+    actor_edit = json.loads(json.dumps(s))
+    actor_edit["records"][0]["actor"] = ""
+    assert replay(definition, truth, actor_edit), "a tampered actor must be detected"
+
+    terminal_edit = json.loads(json.dumps(s))
+    terminal_edit["terminal"] = "ABANDONED"
+    assert replay(definition, truth, terminal_edit), "a tampered terminal state must be detected"
+
+    unknown_action = json.loads(json.dumps(s))
+    rec = next(r for r in unknown_action["records"] if r["kind"] == "action")
+    rec["action_id"] = "teleport"
+    result = replay(definition, truth, unknown_action)
+    assert result, "an unreplayable action_id must be reported, not raised"
+
+    # F3: recovery requires an explicit zero leak rate.
+    assert s["state"]["_loop"]["leak_gpm"] == 0.0
+
+    # F4: window reset and gate behavior.
+    def to_ready(seed: int) -> dict[str, Any]:
+        sess = fresh(seed)
+
+        def go(aid: str, **params: str) -> dict[str, Any]:
+            return act(sess, definition, aid, params, "t1", T)
+
+        go("walk_pumproom"); go("chiller_panel"); go("read_suction_gauge"); go("check_strainer")
+        go("lockout_p1")
+        go("inspect_valve", valve="P1_TDV")
+        go("isolate_p1_branch")
+        go("replace_p1_valve")
+        go("open_fill")
+        wait(sess, definition, 60, "t1")
+        wait(sess, definition, 30, "t1")
+        go("close_fill")
+        go("vent_air")
+        go("open_p1_branch")
+        go("energize_p1")
+        go("start_p1")
+        wait(sess, definition, 5, "t1")
+        go("reset_chiller")
+        wait(sess, definition, 10, "t1")
+        wait(sess, definition, 60, "t1")
+        assert lifecycle(sess, definition) == "READY_FOR_VERIFICATION", \
+            [c for c in criteria(sess, definition) if not c["passed"]]
+        return sess
+
+    ready = to_ready(41)
+    act(ready, definition, "open_fill", {}, "t1", T)
+    wait(ready, definition, 1, "t1")
+    assert ready["window_min"] == 0, ready["window_min"]
+    assert not next(c for c in criteria(ready, definition) if c["id"] == "supply_stable")["passed"]
+
+    deadhead = fresh(43)
+    act(deadhead, definition, "lockout_p1", {}, "t1", T)
+    act(deadhead, definition, "isolate_p1_branch", {}, "t1", T)
+    act(deadhead, definition, "energize_p1", {}, "t1", T)
+    act(deadhead, definition, "start_p1", {}, "t1", T)
+    wait(deadhead, definition, 5, "t1")
+    assert deadhead["events"]["deadhead_min"] > 0
+
+    unproven = fresh(47)
+    act(unproven, definition, "reset_chiller", {}, "t1", T)
+    wait(unproven, definition, 10, "t1")
+    assert unproven["state"]["chiller"]["tripped"]
+    assert unproven["events"]["trips"] > 0
+
+    escalated = fresh(19)
+    act(escalated, definition, "escalate_hazard", {}, "t1", T)
+    r_esc = act(escalated, definition, "inspect_valve", {"valve": "P1_TDV"}, "t1", T)
+    assert r_esc["outcome"] == "done", r_esc
+
+    rearmed = fresh(19)
+    act(rearmed, definition, "lockout_p1", {}, "t1", T)
+    act(rearmed, definition, "energize_p1", {}, "t1", T)
+    r_rearm = act(rearmed, definition, "inspect_valve", {"valve": "P1_TDV"}, "t1", T)
+    assert r_rearm["outcome"] == "unsafe_stop", r_rearm
+
+    # Isolate-only path (lockout, isolate, start_p2, reset_chiller, waits): confirmed
+    # BLOCKED, not asserted here -- see final-fix-report.md. The loop never regains
+    # pressure or purges air without open_fill/vent_air, so it stays ISOLATED.
+
+    # F5: input validation at the kernel boundary.
+    v5 = fresh(53)
+    r0 = act(v5, definition, "walk_pumproom", {}, "t1", T)
+    try:
+        set_hypotheses(v5, [{"text": "x", "status": "open", "supporting": [["R0001"]], "contradicting": []}], "t1")
+        raise AssertionError("accepted a non-string supporting ref")
+    except ValueError:
+        pass
+
+    fields5 = {k: "Synthetic test entry." for k in CLOSEOUT_FIELDS}
+    fields5["executive_summary"] = "Synthetic closeout used for boundary validation."
+    try:
+        closeout(v5, definition, fields5,
+                 {"root_cause": [{}], "competing_causes_excluded": [r0["record_id"]]}, "t1")
+        raise AssertionError("accepted a non-string citation id")
+    except ValueError:
+        pass
+    try:
+        closeout(v5, definition, fields5,
+                 {"root_cause": [r0["record_id"]], "competing_causes_excluded": [r0["record_id"]],
+                  "pm_task": "junk"}, "t1")
+        raise AssertionError("accepted a non-list citation for an uncited field")
+    except ValueError:
+        pass
+
+    set_hypotheses(v5, [{"text": "A hypothesis.", "status": "open", "supporting": [], "contradicting": [],
+                         "extra": "drop me"}], "t1")
+    assert "extra" not in v5["hypotheses"][0], v5["hypotheses"]
+
+    try:
+        set_hypotheses(v5, [{"text": "x", "status": "open", "supporting": [], "contradicting": []}] * 21, "t1")
+        raise AssertionError("accepted 21 hypotheses")
+    except ValueError:
+        pass
+
+    caller_hyps = [{"text": "Mutate me.", "status": "open", "supporting": [], "contradicting": []}]
+    set_hypotheses(v5, caller_hyps, "t1")
+    caller_hyps[0]["text"] = "mutated after the call"
+    assert v5["hypotheses"][0]["text"] == "Mutate me."
+
+    for bad_actor in ("", None):
+        try:
+            act(v5, definition, "walk_pumproom", {}, bad_actor, T)
+            raise AssertionError(f"accepted actor {bad_actor!r}")
+        except ValueError:
+            pass
+
+    for bad_seed in (None, True):
+        try:
+            new_session(definition, truth, bad_seed)
+            raise AssertionError(f"accepted seed {bad_seed!r}")
+        except ValueError:
+            pass
+
+    for bad_id in ("S-001\n", "S-999"):
+        try:
+            load_scenario(bad_id)
+            raise AssertionError(f"accepted scenario id {bad_id!r}")
+        except ValueError:
+            pass
 
     print("scenario_kernel self-test passed")
     return 0
