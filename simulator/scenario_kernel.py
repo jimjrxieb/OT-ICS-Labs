@@ -226,6 +226,86 @@ def wait(session: dict[str, Any], definition: dict[str, Any], minutes: int, acto
     return _record(session, kind="wait", minutes=minutes, actor=actor)
 
 
+# --- actions --------------------------------------------------------------------
+
+UNSAFE_STOP_TEXT = ("Stopped: you went hands-on at energized equipment standing in water. "
+                    "The session ends here; the debrief explains what a safe path looked like.")
+
+
+def _action(definition: dict[str, Any], action_id: str) -> dict[str, Any]:
+    for action in definition["actions"]:
+        if action["action_id"] == action_id:
+            return action
+    raise ValueError(f"unknown action {action_id!r}")
+
+
+def _checked_params(session: dict[str, Any], action: dict[str, Any], params: Any) -> dict[str, str]:
+    if not isinstance(params, dict):
+        raise ValueError("params must be an object")
+    spec, fixed = action.get("params", {}), action.get("fixed_params", {})
+    for key, value in params.items():
+        if key in fixed and value != fixed[key]:
+            raise ValueError(f"parameter {key!r} is fixed for this action")
+    unknown = set(params) - set(spec) - set(fixed)
+    if unknown:
+        raise ValueError(f"unexpected parameter(s): {sorted(unknown)}")
+    clean: dict[str, str] = {}
+    for name, allowed in spec.items():
+        value = params.get(name)
+        if not isinstance(value, str):
+            raise ValueError(f"parameter {name!r} is required")
+        if allowed == "*":
+            if value not in session["pts"]:
+                raise ValueError(f"unknown point {value!r}")
+        elif value not in allowed:
+            raise ValueError(f"parameter {name!r} must be one of {allowed}")
+        clean[name] = value
+    clean.update(fixed)
+    return clean
+
+
+def _hazardous(session: dict[str, Any], action: dict[str, Any], params: dict[str, str]) -> bool:
+    """Hands-on at P1's side while there is standing water and P1 is energized."""
+    gate = action.get("hazard_gated", False)
+    if isinstance(gate, dict):
+        gate = params.get(gate["param"]) in gate["values"]
+    if not gate:
+        return False
+    water = model822.ground_truth_snapshot(session["state"])["PUMPROOM_WATER_GAL_PHYSICAL"]
+    return water >= field_obs.STANDING_WATER_GAL and session["lineup"]["p1_energized"]
+
+
+def act(session: dict[str, Any], definition: dict[str, Any], action_id: str,
+        params: dict[str, Any], actor: str, role: str) -> dict[str, Any]:
+    """Perform one catalog action. Order: session open, action known, role
+    allowed, params valid (these raise and record nothing), prerequisites
+    (refusal is recorded, nothing changes), safety gate (unsafe ends the
+    session), then advance the clock by the action's time cost and apply it."""
+    if session["terminal"]:
+        raise SessionClosed(f"session is {session['terminal']}")
+    action = _action(definition, action_id)
+    if role not in action["roles"]:
+        raise PermissionError(f"role {role!r} may not perform {action_id!r}")
+    clean = _checked_params(session, action, params)
+    base = {"kind": "action", "action_id": action_id, "params": clean, "actor": actor, "role": role,
+            "evidence_type": action["evidence_type"], "safety": action.get("safety", "safe"),
+            "prerequisites": list(action.get("prerequisites", []))}
+    unmet = [scenario_actions.PREREQUISITES[p] for p in action.get("prerequisites", [])
+             if not scenario_actions.prerequisite_met(p, session)]
+    if unmet:
+        return _record(session, **base, outcome="refused", reasons=unmet, observation=None,
+                       state_changes=[], diagnostic_cost_min=0)
+    if _hazardous(session, action, clean):
+        session["terminal"] = "UNSAFE_STOP"
+        base["safety"] = "unsafe"
+        return _record(session, **base, outcome="unsafe_stop", reasons=[], observation=UNSAFE_STOP_TEXT,
+                       state_changes=[], diagnostic_cost_min=0)
+    _advance(session, action["time_cost_min"])
+    observation, changes = scenario_actions.HANDLERS[action["effect"]](session, clean)
+    return _record(session, **base, outcome="done", reasons=[], observation=observation,
+                   state_changes=changes, diagnostic_cost_min=action["time_cost_min"])
+
+
 def self_test() -> int:
     definition, truth = load_scenario("S-001")
     # --- Task 2: loading and validation ------------------------------------------
@@ -274,6 +354,79 @@ def self_test() -> int:
             raise AssertionError(f"accepted wait {bad!r}")
         except ValueError:
             pass
+
+    # --- Task 4: actions ------------------------------------------------------------
+    assert set(scenario_actions.HANDLERS) == set(scenario_actions.EFFECTS)
+    T = "technician"
+
+    def fresh(seed: int = 11) -> dict[str, Any]:
+        return new_session(definition, truth, seed)
+
+    s = fresh()
+    h0 = state_hash(s["state"])
+    try:
+        act(s, definition, "walk_pumproom", {}, "t1", role="viewer")
+        raise AssertionError("a viewer acted")
+    except PermissionError:
+        pass
+    for aid, params in (("inspect_valve", {"valve": "P9_TDV"}), ("pin_point", {"point": "NOPE"}),
+                        ("teleport", {}), ("start_p1", {"pump": "P2"}), ("walk_pumproom", {"x": "1"})):
+        try:
+            act(s, definition, aid, params, "t1", T)
+            raise AssertionError(f"accepted {aid} {params}")
+        except ValueError:
+            pass
+    r = act(s, definition, "replace_p1_valve", {}, "t1", T)
+    assert r["outcome"] == "refused" and r["reasons"], r
+    assert s["clock_min"] == 0 and state_hash(s["state"]) == h0, "a refusal changes nothing"
+
+    r = act(s, definition, "walk_pumproom", {}, "t1", T)
+    assert r["outcome"] == "done" and "Standing water" in r["observation"] and s["clock_min"] == 5
+    assert "LowEvapFlow" in act(s, definition, "chiller_panel", {}, "t1", T)["observation"]
+    assert "psid" in act(s, definition, "check_strainer", {}, "t1", T)["observation"]
+    assert "% travel" in act(s, definition, "check_mau04_travel", {}, "t1", T)["observation"]
+    r = act(s, definition, "pin_point", {"point": "CHW822_GPM"}, "t1", T)
+    assert r["evidence_type"] == "bas_value" and r["observation"].startswith("CHW822_GPM = ")
+
+    # Going hands-on at the energized P1 in standing water ends the session.
+    r = act(s, definition, "inspect_valve", {"valve": "P1_TDV"}, "t1", T)
+    assert r["outcome"] == "unsafe_stop" and r["safety"] == "unsafe" and s["terminal"] == "UNSAFE_STOP"
+    try:
+        act(s, definition, "walk_pumproom", {}, "t1", T)
+        raise AssertionError("acted after the session ended")
+    except SessionClosed:
+        pass
+
+    # P2's side is dry; after lockout the P1 inspection is safe.
+    s = fresh()
+    act(s, definition, "inspect_valve", {"valve": "P2_TDV"}, "t1", T)
+    act(s, definition, "clamp_amps", {"pump": "P2"}, "t1", T)
+    assert s["terminal"] is None
+    r = act(s, definition, "lockout_p1", {}, "t1", T)
+    assert r["safety"] == "requires_decision" and not s["lineup"]["p1_energized"]
+    r = act(s, definition, "inspect_valve", {"valve": "P1_TDV"}, "t1", T)
+    assert r["outcome"] == "done" and "corrosion through the valve body" in r["observation"], r
+
+    # A fill valve left open masks the leak: pressure holds while the floor floods.
+    s = fresh()
+    fill = model822.TUNING["LOOP_FILL_PSIG"]
+    water0 = model822.ground_truth_snapshot(s["state"])["PUMPROOM_WATER_GAL_PHYSICAL"]
+    act(s, definition, "open_fill", {}, "t1", T)
+    for _ in range(3):
+        wait(s, definition, 60, "t1")
+    gt = model822.ground_truth_snapshot(s["state"])
+    assert gt["CHW822_LOOP_PSIG_PHYSICAL"] >= fill - 0.5, gt
+    assert gt["PUMPROOM_WATER_GAL_PHYSICAL"] > water0 + 30.0, (water0, gt)
+    act(s, definition, "close_fill", {}, "t1", T)
+    wait(s, definition, 15, "t1")
+    assert model822.ground_truth_snapshot(s["state"])["CHW822_LOOP_PSIG_PHYSICAL"] < fill - 1.0
+
+    # Resetting without flow is counted, and the flow switch trips it again.
+    s = fresh()
+    r = act(s, definition, "reset_chiller", {}, "t1", T)
+    assert "Reset accepted" in r["observation"] and s["state"]["chiller"]["unproven_resets"] == 1
+    wait(s, definition, 10, "t1")
+    assert s["state"]["chiller"]["tripped"]
 
     print("scenario_kernel self-test passed")
     return 0
