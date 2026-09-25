@@ -130,6 +130,102 @@ def validate_scenario(definition: dict[str, Any], truth: dict[str, Any]) -> list
     return errors
 
 
+# --- sessions and the simulated clock -------------------------------------------
+
+def state_hash(state: dict[str, Any]) -> str:
+    """Stable fingerprint of the model state; replay must reproduce it exactly."""
+    blob = json.dumps(state, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _knobs(session: dict[str, Any]) -> dict[str, Any]:
+    """Model knobs for one step: the trainee's lineup plus the hidden cause."""
+    lu = session["lineup"]
+    leak = 0.0 if session["flags"]["valve_replaced"] else session["cause"]["p1_tdv_leak_gpm"]
+    return {"CHW-822": {
+        "p1_running": lu["p1_running"] and lu["p1_energized"],
+        "p2_running": lu["p2_running"],
+        "p1_branch_isolated": lu["p1_branch_isolated"],
+        "makeup_valve_open": lu["makeup_valve_open"],
+        "p1_tdv_leak_gpm": leak,
+    }}
+
+
+def _step(session: dict[str, Any], knobs: dict[str, Any]) -> None:
+    session["state"], session["pts"] = model822.step_822(
+        session["state"], session["model_step"], session["profile"],
+        overrides=session["overrides"], knobs=knobs)
+    session["model_step"] += 1
+
+
+def _advance(session: dict[str, Any], minutes: int) -> None:
+    """Step the building minute by minute, tracking trips, dead-heading, and the
+    stabilization window (supply in band, chiller producing, flow proven, and
+    the loop holding fill pressure with the fill valve closed)."""
+    t = model822.TUNING
+    for _ in range(minutes):
+        was_tripped = session["state"]["chiller"]["tripped"]
+        _step(session, _knobs(session))
+        st, pts = session["state"], session["pts"]
+        loop, cs = st["_loop"], st["chiller"]
+        if cs["tripped"] and not was_tripped:
+            session["events"]["trips"] += 1
+        if loop["p1_deadhead"]:
+            session["events"]["deadhead_min"] += 1
+        holding = (not session["lineup"]["makeup_valve_open"]
+                   and st["chw"]["loop_psig"] >= t["LOOP_FILL_PSIG"] - 1.0)
+        producing = not cs["tripped"] and cs["restart_min"] <= 0
+        in_band = abs(pts["CHW822_ENT_SUP_TEMP"] - t["CHW_SETPOINT_F"]) <= session["supply_band_f"]
+        steady = (holding and producing and in_band and not loop["p1_deadhead"]
+                  and loop["flow_frac"] >= t["EVAP_MIN_FLOW_FRAC"])
+        session["window_min"] = session["window_min"] + 1 if steady else 0
+        session["clock_min"] += 1
+
+
+def _record(session: dict[str, Any], **fields: Any) -> dict[str, Any]:
+    n = len(session["records"]) + 1
+    record = {"record_id": f"R{n:04d}", "seq": n, "sim_min": session["clock_min"],
+              "wall_time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              **fields, "state_hash": state_hash(session["state"])}
+    session["records"].append(record)
+    return record
+
+
+def new_session(definition: dict[str, Any], truth: dict[str, Any], seed: int,
+                session_id: str = "S-001-local") -> dict[str, Any]:
+    """Build the building as the trainee finds it at the start of the shift:
+    healthy warmup, then the hidden cause running for pre_shift_leak_min."""
+    rng = random.Random(seed)
+    low, high = truth["leak_gpm_range"]
+    session: dict[str, Any] = {
+        "session_id": session_id, "scenario_id": definition["scenario_id"],
+        "definition_version": definition["version"], "seed": seed,
+        "profile": truth["profile"], "supply_band_f": definition["supply_band_f"],
+        "cause": {"p1_tdv_leak_gpm": round(rng.uniform(low, high), 2)},
+        "lineup": dict(DEFAULT_LINEUP), "flags": {"valve_replaced": False, "escalated": False},
+        "overrides": {}, "state": model822.cold_start_state(), "pts": {},
+        "model_step": 0, "clock_min": 0, "window_min": 0,
+        "events": {"trips": 0, "deadhead_min": 0},
+        "records": [], "hypotheses": [], "closeout": None, "verification": None, "terminal": None,
+    }
+    for _ in range(truth["healthy_warmup_min"]):
+        _step(session, {})
+    for _ in range(truth["pre_shift_leak_min"]):
+        _step(session, _knobs(session))
+    session["start_hash"] = state_hash(session["state"])
+    return session
+
+
+def wait(session: dict[str, Any], definition: dict[str, Any], minutes: int, actor: str) -> dict[str, Any]:
+    if session["terminal"]:
+        raise SessionClosed(f"session is {session['terminal']}")
+    limit = definition["max_wait_min"]
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= limit:
+        raise ValueError(f"minutes must be an integer from 1 to {limit}")
+    _advance(session, minutes)
+    return _record(session, kind="wait", minutes=minutes, actor=actor)
+
+
 def self_test() -> int:
     definition, truth = load_scenario("S-001")
     # --- Task 2: loading and validation ------------------------------------------
@@ -154,6 +250,31 @@ def self_test() -> int:
     assert any("hazard_gated" in e for e in broken(
         lambda d, t: d["actions"][0].update(hazard_gated={"param": "nope", "values": ["x"]})))
     assert any("disagree" in e for e in broken(lambda d, t: t.update(version=2)))
+
+    # --- Task 3: sessions, clock, waits -------------------------------------------
+    s1 = new_session(definition, truth, seed=7)
+    s2 = new_session(definition, truth, seed=7)
+    assert s1["start_hash"] == s2["start_hash"] and s1["cause"] == s2["cause"], "same seed, same start"
+    lo, hi = truth["leak_gpm_range"]
+    for seed in range(5):
+        assert lo <= new_session(definition, truth, seed)["cause"]["p1_tdv_leak_gpm"] <= hi
+    pts, gt = s1["pts"], model822.ground_truth_snapshot(s1["state"])
+    t = model822.TUNING
+    assert pts["CHW822_P1_STATUS"] == 1, "at shift start P1 still shows running"
+    assert pts["CHW822_GPM"] < t["CHW_GPM_DESIGN"] * t["EVAP_MIN_FLOW_FRAC"], pts["CHW822_GPM"]
+    assert pts["RTAC822_ACTIVE_DIAG"] == model822.DIAG_STATES.index("LowEvapFlow")
+    assert gt["PUMPROOM_WATER_GAL_PHYSICAL"] >= field_obs.STANDING_WATER_GAL, gt
+    assert s1["clock_min"] == 0 and s1["records"] == [] and s1["terminal"] is None
+    rec = wait(s1, definition, 10, actor="t1")
+    assert s1["clock_min"] == 10 and rec["kind"] == "wait" and rec["record_id"] == "R0001"
+    assert rec["state_hash"] == state_hash(s1["state"]) and rec["state_hash"] != s1["start_hash"]
+    for bad in (0, 61, "5", True):
+        try:
+            wait(s1, definition, bad, actor="t1")
+            raise AssertionError(f"accepted wait {bad!r}")
+        except ValueError:
+            pass
+
     print("scenario_kernel self-test passed")
     return 0
 
