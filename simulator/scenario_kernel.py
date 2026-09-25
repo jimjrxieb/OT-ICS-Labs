@@ -306,6 +306,188 @@ def act(session: dict[str, Any], definition: dict[str, Any], action_id: str,
                    state_changes=changes, diagnostic_cost_min=action["time_cost_min"])
 
 
+# --- verification, lifecycle, closeout -------------------------------------------
+
+CLOSEOUT_FIELDS = (
+    "complaint_and_baseline", "safety_and_decisions", "root_cause", "competing_causes_excluded",
+    "corrective_action", "before_after_and_stabilization", "overrides_released",
+    "remaining_risk_and_owner", "pm_task", "crew_summary", "executive_summary",
+)
+CITED_FIELDS = ("root_cause", "competing_causes_excluded")
+HYPOTHESIS_STATUS = ("open", "supported", "ruled_out")
+TRAINEE_RECORD_KEYS = ("record_id", "kind", "sim_min", "action_id", "params", "minutes", "outcome",
+                       "observation", "evidence_type", "reasons", "verification")
+
+
+def criteria(session: dict[str, Any], definition: dict[str, Any]) -> list[dict[str, Any]]:
+    """Closeout acceptance, from model state. Labels describe observable
+    conditions only -- never the hidden cause."""
+    st, t = session["state"], model822.TUNING
+    band, window = definition["supply_band_f"], definition["stabilization_window_min"]
+    return [
+        {"id": "loop_pressure", "label": "Loop holding fill pressure with the fill valve closed",
+         "passed": not session["lineup"]["makeup_valve_open"] and st["chw"]["loop_psig"] >= t["LOOP_FILL_PSIG"] - 1.0},
+        {"id": "no_air", "label": "No air in the chilled-water loop",
+         "passed": st["chw"]["air_frac"] == 0.0},
+        {"id": "flow_proven", "label": f"Chilled-water flow proven (at least {t['EVAP_MIN_FLOW_FRAC']:.0%} of design)",
+         "passed": st["_loop"]["flow_frac"] >= t["EVAP_MIN_FLOW_FRAC"]},
+        {"id": "chiller_running", "label": "Chiller running with no active diagnostic",
+         "passed": not st["chiller"]["tripped"] and st["chiller"]["restart_min"] <= 0},
+        {"id": "supply_stable",
+         "label": f"Supply within ±{band:g} F of setpoint, loop holding pressure, for {window} continuous minutes",
+         "passed": session["window_min"] >= window},
+        {"id": "overrides_released", "label": "No temporary operator overrides left active",
+         "passed": not session["overrides"]},
+    ]
+
+
+def lifecycle(session: dict[str, Any], definition: dict[str, Any]) -> str:
+    """Derived from session and model state; the client never sets it."""
+    if session["terminal"]:
+        return session["terminal"]
+    if not session["records"]:
+        return "OPEN"
+    st, t = session["state"], model822.TUNING
+    if not session["flags"]["valve_replaced"] and not session["lineup"]["p1_branch_isolated"]:
+        return "INVESTIGATING"
+    if st["chw"]["loop_psig"] < t["LOOP_FILL_PSIG"] - 1.0 or st["chw"]["air_frac"] > 0.0:
+        return "ISOLATED"
+    cs = st["chiller"]
+    if cs["tripped"] or cs["restart_min"] > 0 or st["_loop"]["flow_frac"] < t["EVAP_MIN_FLOW_FRAC"]:
+        return "REPAIRING"
+    if all(c["passed"] for c in criteria(session, definition)):
+        return "READY_FOR_VERIFICATION"
+    return "RECOVERING"
+
+
+def _validate_closeout(session: dict[str, Any], fields: Any, citations: Any) -> None:
+    if not isinstance(fields, dict):
+        raise ValueError("closeout fields must be an object")
+    errors = []
+    for key in CLOSEOUT_FIELDS:
+        value = fields.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"closeout field {key!r} is required")
+        elif len(value) > 2000:
+            errors.append(f"closeout field {key!r} is longer than 2000 characters")
+    extra = set(fields) - set(CLOSEOUT_FIELDS)
+    if extra:
+        errors.append(f"unknown closeout field(s): {sorted(extra)}")
+    summary = fields.get("executive_summary")
+    if isinstance(summary, str) and (len(summary) > 300 or "$" in summary):
+        errors.append("executive_summary must be one short sentence with no dollar figures")
+    evidence = {r["record_id"] for r in session["records"]
+                if r["kind"] == "action" and r["outcome"] == "done" and r["evidence_type"] != "none"}
+    if not isinstance(citations, dict):
+        errors.append("citations must be an object")
+    else:
+        for key in CITED_FIELDS:
+            if not isinstance(citations.get(key), list) or not citations[key]:
+                errors.append(f"{key!r} must cite at least one evidence record")
+        for key, ids in citations.items():
+            if key not in CLOSEOUT_FIELDS:
+                errors.append(f"citation for unknown field {key!r}")
+            elif isinstance(ids, list):
+                bad = [i for i in ids if i not in evidence]
+                if bad:
+                    errors.append(f"{key!r} cites records that are not evidence in this session: {bad}")
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
+def closeout(session: dict[str, Any], definition: dict[str, Any], fields: dict[str, str],
+             citations: dict[str, list[str]], actor: str) -> dict[str, Any]:
+    """Validate the structured closeout, then verify the building. All criteria
+    pass -> CLOSED; otherwise the failed criteria are recorded and the session
+    stays open."""
+    if session["terminal"]:
+        raise SessionClosed(f"session is {session['terminal']}")
+    _validate_closeout(session, fields, citations)
+    results = criteria(session, definition)
+    passed = all(c["passed"] for c in results)
+    session["closeout"] = {"fields": fields, "citations": citations}
+    session["verification"] = results
+    if passed:
+        session["terminal"] = "CLOSED"
+    return _record(session, kind="closeout", fields=fields, citations=citations, actor=actor,
+                   outcome="closed" if passed else "failed_verification", verification=results)
+
+
+def set_hypotheses(session: dict[str, Any], hypotheses: list[dict[str, Any]], actor: str) -> dict[str, Any]:
+    if session["terminal"]:
+        raise SessionClosed(f"session is {session['terminal']}")
+    if not isinstance(hypotheses, list):
+        raise ValueError("hypotheses must be a list")
+    ids = {r["record_id"] for r in session["records"]}
+    for h in hypotheses:
+        if not isinstance(h, dict) or not isinstance(h.get("text"), str) or not 0 < len(h["text"].strip()) <= 500:
+            raise ValueError("each hypothesis needs text of 1-500 characters")
+        if h.get("status") not in HYPOTHESIS_STATUS:
+            raise ValueError(f"hypothesis status must be one of {list(HYPOTHESIS_STATUS)}")
+        for key in ("supporting", "contradicting"):
+            refs = h.get(key, [])
+            if not isinstance(refs, list) or any(ref not in ids for ref in refs):
+                raise ValueError(f"hypothesis {key} must reference records in this session")
+    session["hypotheses"] = hypotheses
+    return _record(session, kind="hypotheses", hypotheses=hypotheses, actor=actor)
+
+
+def abandon(session: dict[str, Any], actor: str) -> dict[str, Any]:
+    if session["terminal"]:
+        raise SessionClosed(f"session is {session['terminal']}")
+    session["terminal"] = "ABANDONED"
+    return _record(session, kind="abandon", actor=actor)
+
+
+def trainee_view(session: dict[str, Any], definition: dict[str, Any]) -> dict[str, Any]:
+    """Everything a trainee may see. No cause, no instructor text, no model
+    internals beyond what the actions themselves returned."""
+    actions = []
+    for a in definition["actions"]:
+        unmet = [scenario_actions.PREREQUISITES[p] for p in a.get("prerequisites", [])
+                 if not scenario_actions.prerequisite_met(p, session)]
+        actions.append({
+            "action_id": a["action_id"], "label": a["label"], "group": a["group"],
+            "time_cost_min": a["time_cost_min"],
+            "params": {k: ("any BAS point" if v == "*" else v) for k, v in a.get("params", {}).items()},
+            "available": not unmet and not session["terminal"], "unavailable_because": unmet,
+        })
+    return {
+        "session_id": session["session_id"], "scenario_id": session["scenario_id"],
+        "title": definition["title"], "complaint": definition["complaint"],
+        "safety_banner": definition["safety_banner"], "status": lifecycle(session, definition),
+        "clock_min": session["clock_min"], "max_wait_min": definition["max_wait_min"],
+        "actions": actions,
+        "records": [{k: r[k] for k in TRAINEE_RECORD_KEYS if k in r} for r in session["records"]],
+        "hypotheses": session["hypotheses"], "closeout": session["closeout"],
+        "verification": session["verification"],
+    }
+
+
+def debrief(session: dict[str, Any], definition: dict[str, Any], truth: dict[str, Any]) -> dict[str, Any]:
+    """The answer and a review of the run -- only after the session has ended."""
+    if not session["terminal"]:
+        raise ValueError("the debrief is available after the session ends")
+    records, cs = session["records"], session["state"]["chiller"]
+    first_p1 = next((r["sim_min"] for r in records
+                     if r.get("action_id") == "inspect_valve" and r.get("outcome") == "done"
+                     and r.get("params", {}).get("valve") == "P1_TDV"), None)
+    closed_at = next((r["sim_min"] for r in records if r.get("outcome") == "closed"), None)
+    return {
+        "outcome": session["terminal"], "hidden_cause": truth["hidden_cause"],
+        "leak_gpm": session["cause"]["p1_tdv_leak_gpm"], "pre_shift_leak_min": truth["pre_shift_leak_min"],
+        "timeline": trainee_view(session, definition)["records"],
+        "safety_decisions": [{"record_id": r["record_id"], "action_id": r["action_id"],
+                              "safety": r["safety"], "outcome": r["outcome"]}
+                             for r in records if r.get("safety") in ("requires_decision", "unsafe")],
+        "resets": cs["resets"], "unproven_resets": cs["unproven_resets"],
+        "pump_deadhead_min": session["events"]["deadhead_min"],
+        "chiller_trips_during_session": session["events"]["trips"],
+        "first_p1_valve_inspection_min": first_p1, "closed_at_min": closed_at,
+        "notes": truth["debrief"],
+    }
+
+
 def self_test() -> int:
     definition, truth = load_scenario("S-001")
     # --- Task 2: loading and validation ------------------------------------------
@@ -427,6 +609,85 @@ def self_test() -> int:
     assert "Reset accepted" in r["observation"] and s["state"]["chiller"]["unproven_resets"] == 1
     wait(s, definition, 10, "t1")
     assert s["state"]["chiller"]["tripped"]
+
+    # --- Task 5: lifecycle, verification, closeout, debrief ----------------------
+    s = fresh(3)
+
+    def do(aid: str, **params: str) -> dict[str, Any]:
+        return act(s, definition, aid, params, "t1", T)
+
+    assert lifecycle(s, definition) == "OPEN"
+    view = trainee_view(s, definition)
+    replace = next(a for a in view["actions"] if a["action_id"] == "replace_p1_valve")
+    assert not replace["available"] and replace["unavailable_because"], replace
+    ev = [do("walk_pumproom"), do("chiller_panel"), do("read_suction_gauge"), do("check_strainer")]
+    assert lifecycle(s, definition) == "INVESTIGATING"
+    do("lockout_p1")
+    ev.append(do("inspect_valve", valve="P1_TDV"))
+    do("isolate_p1_branch")
+    assert lifecycle(s, definition) == "ISOLATED"
+
+    fields = {k: "Synthetic test entry." for k in CLOSEOUT_FIELDS}
+    fields["executive_summary"] = "Building 822 cooling was restored after a failed valve body was isolated and replaced."
+    cites = {"root_cause": [ev[-1]["record_id"]], "competing_causes_excluded": [ev[3]["record_id"]]}
+    r = closeout(s, definition, fields, cites, "t1")
+    assert r["outcome"] == "failed_verification" and s["terminal"] is None, r
+    failed = {c["id"] for c in r["verification"] if not c["passed"]}
+    assert {"chiller_running", "supply_stable"} <= failed, failed
+
+    do("replace_p1_valve")
+    do("open_fill")
+    wait(s, definition, 60, "t1")
+    wait(s, definition, 30, "t1")
+    do("close_fill")
+    assert lifecycle(s, definition) == "ISOLATED", "refilled but still air-bound"
+    assert "solid water" in do("vent_air")["observation"]
+    do("open_p1_branch")
+    do("energize_p1")
+    do("start_p1")
+    wait(s, definition, 5, "t1")
+    assert lifecycle(s, definition) == "REPAIRING", "flow back, chiller still latched"
+    do("reset_chiller")
+    wait(s, definition, 10, "t1")
+    assert lifecycle(s, definition) == "RECOVERING"
+    wait(s, definition, 60, "t1")
+    assert lifecycle(s, definition) == "READY_FOR_VERIFICATION", \
+        [c for c in criteria(s, definition) if not c["passed"]]
+
+    try:
+        set_hypotheses(s, [{"text": "x", "status": "supported", "supporting": ["R9999"], "contradicting": []}], "t1")
+        raise AssertionError("hypothesis cited a missing record")
+    except ValueError:
+        pass
+    set_hypotheses(s, [{"text": "Failed valve body on the P1 branch", "status": "supported",
+                        "supporting": [ev[-1]["record_id"]], "contradicting": []}], "t1")
+    bad_cases = (
+        (dict(fields, executive_summary="Saved $10,000 in one night."), cites),
+        (fields, {"root_cause": ["R9999"], "competing_causes_excluded": cites["competing_causes_excluded"]}),
+        ({k: v for k, v in fields.items() if k != "pm_task"}, cites),
+        (fields, {"root_cause": cites["root_cause"]}),
+    )
+    for bad_fields, bad_cites in bad_cases:
+        try:
+            closeout(s, definition, bad_fields, bad_cites, "t1")
+            raise AssertionError("accepted an invalid closeout")
+        except ValueError:
+            pass
+    try:
+        debrief(s, definition, truth)
+        raise AssertionError("debrief before the session ended")
+    except ValueError:
+        pass
+    r = closeout(s, definition, fields, cites, "t1")
+    assert r["outcome"] == "closed" and s["terminal"] == "CLOSED" and lifecycle(s, definition) == "CLOSED"
+    d = debrief(s, definition, truth)
+    assert d["hidden_cause"] == truth["hidden_cause"] and d["outcome"] == "CLOSED"
+    assert d["unproven_resets"] == 0 and d["first_p1_valve_inspection_min"] is not None
+    assert any(x["action_id"] == "lockout_p1" for x in d["safety_decisions"])
+
+    s_abandoned = fresh(4)
+    abandon(s_abandoned, "instructor-1")
+    assert s_abandoned["terminal"] == "ABANDONED" and debrief(s_abandoned, definition, truth)["outcome"] == "ABANDONED"
 
     print("scenario_kernel self-test passed")
     return 0
