@@ -1378,6 +1378,10 @@ async function loadPlatformBackups() {
 }
 
 let pxLoaded = false;
+// Each Px page load takes a number; only the newest load may touch the
+// canvas or selector, so a slow earlier response can't replace the page
+// the operator has since picked.
+let pxLoadSeq = 0;
 
 async function loadPxList() {
   await populatePxPointOptions();
@@ -1397,13 +1401,16 @@ async function loadPxList() {
 async function loadPxPage(id) {
   if (!id) return;
   const canvas = document.getElementById('px-canvas');
+  const seq = ++pxLoadSeq;
   try {
     const res = await fetch('/api/px/' + id);
     const page = await res.json();
+    if (seq !== pxLoadSeq) return;
     document.getElementById('px-select').value = page.px_id;
     canvas.innerHTML = renderPxSvg(page);
     await refreshEditorBackups('px');
   } catch(e) {
+    if (seq !== pxLoadSeq) return;
     canvas.innerHTML = '<div style="color:#c62828">Error loading Px page: ' + e + '</div>';
   }
 }
@@ -1503,8 +1510,12 @@ async function addPxWidget() {
 function renderPxSvg(page) {
   const widgets = page.widgets;
   let maxX = 0, maxY = 0;
-  widgets.forEach(w => { maxX = Math.max(maxX, w.x + 170); maxY = Math.max(maxY, w.y + 90); });
   const ductY = 175, ductH = 26;
+  widgets.forEach(w => { maxX = Math.max(maxX, w.x + 170); maxY = Math.max(maxY, w.y + 90); });
+  // Floors keep the supply duct a positive width and inside the view, even
+  // on an empty page or one whose widgets all sit above the duct.
+  maxX = Math.max(maxX, 200);
+  maxY = Math.max(maxY, ductY + ductH);
 
   let svg = '<svg width="100%" viewBox="0 0 ' + (maxX + 30) + ' ' + (maxY + 20) + '" style="background:#eef3e6;border:1px solid #c4d4b0;border-radius:4px;">';
   svg += '<rect x="10" y="' + ductY + '" width="' + (maxX - 10) + '" height="' + ductH + '" fill="#cfd8bf" stroke="#8aa878" stroke-width="1"/>';

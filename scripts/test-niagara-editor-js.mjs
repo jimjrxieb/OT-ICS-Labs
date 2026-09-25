@@ -189,6 +189,86 @@ check(
    '']
 );
 
+// --- Px page rendering: every SVG size is non-negative and the duct fits ----
+
+const { renderPxSvg } = new Function(
+  extractFunction(scriptSource, 'renderPxSvg') + '\n\n' + extractFunction(scriptSource, 'renderPxWidget') +
+  '\nreturn {renderPxSvg};'
+)();
+
+function pxSvgGeometry(svg) {
+  const [, , vbW, vbH] = svg.match(/viewBox="([^"]+)"/)[1].split(' ').map(Number);
+  const duct = svg.match(/<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="(-?[\d.]+)" height="(-?[\d.]+)"/).slice(1).map(Number);
+  const widths = [...svg.matchAll(/width="(-?[\d.]+)"/g)].map((m) => Number(m[1]));
+  return { vbW, vbH, duct, widths };
+}
+
+for (const [label, widgets] of [
+  ['empty page', []],
+  ['one widget above the duct', [{ widget_id: 'w1', kind: 'value', point: 'RTU1_SAT', label: 'SAT', x: 100, y: 40, value: 55 }]],
+  ['widget far right and below the duct', [{ widget_id: 'w2', kind: 'gauge', point: 'RTU1_DMPR', label: 'Damper', x: 600, y: 300, value: 40 }]],
+]) {
+  const g = pxSvgGeometry(renderPxSvg({ widgets }));
+  const [x, y, w, h] = g.duct;
+  check(
+    'renderPxSvg (' + label + '): no negative widths, duct inside the viewBox',
+    { negative: g.widths.filter((v) => v < 0), ductFits: x >= 0 && y >= 0 && x + w <= g.vbW && y + h <= g.vbH },
+    { negative: [], ductFits: true }
+  );
+}
+
+// --- Px page selection: a slower, older response never replaces a newer one --
+
+function pxLoadHarness() {
+  const pending = {};
+  const els = { 'px-select': { value: '' }, 'px-canvas': { innerHTML: '' } };
+  const fakeFetch = (url) => new Promise((resolve, reject) => { pending[url] = { resolve, reject }; });
+  const fakeDocument = { getElementById: (id) => els[id] };
+  const { loadPxPage } = new Function(
+    'fetch', 'document', 'renderPxSvg', 'refreshEditorBackups',
+    // extractFunction starts at 'function', so restore the async keyword.
+    'let pxLoadSeq = 0;\nasync ' + extractFunction(scriptSource, 'loadPxPage') + '\nreturn {loadPxPage};'
+  )(fakeFetch, fakeDocument, (page) => 'svg:' + page.px_id, async () => {});
+  const respond = (id) => pending['/api/px/' + id].resolve({ ok: true, json: async () => ({ px_id: id, widgets: [] }) });
+  const fail = (id) => pending['/api/px/' + id].reject(new Error('network down'));
+  return { els, loadPxPage, respond, fail };
+}
+
+{
+  const h = pxLoadHarness();
+  const first = h.loadPxPage('RTU1_SCHEMATIC');   // initial load, slow
+  const second = h.loadPxPage('CODEX_PX_CHECK');  // user picks another page meanwhile
+  h.respond('CODEX_PX_CHECK');
+  await second;
+  h.respond('RTU1_SCHEMATIC');                    // the stale response lands last
+  await first;
+  check('loadPxPage: a stale response does not override the newer selection',
+        [h.els['px-select'].value, h.els['px-canvas'].innerHTML],
+        ['CODEX_PX_CHECK', 'svg:CODEX_PX_CHECK']);
+}
+
+{
+  const h = pxLoadHarness();
+  const first = h.loadPxPage('RTU1_SCHEMATIC');
+  const second = h.loadPxPage('CODEX_PX_CHECK');
+  h.respond('CODEX_PX_CHECK');
+  await second;
+  h.fail('RTU1_SCHEMATIC');                       // the stale request errors last
+  await first;
+  check('loadPxPage: a stale request error does not replace the newer page',
+        h.els['px-canvas'].innerHTML, 'svg:CODEX_PX_CHECK');
+}
+
+{
+  const h = pxLoadHarness();
+  const only = h.loadPxPage('RTU1_SCHEMATIC');
+  h.respond('RTU1_SCHEMATIC');
+  await only;
+  check('loadPxPage: a single load still renders its page',
+        [h.els['px-select'].value, h.els['px-canvas'].innerHTML],
+        ['RTU1_SCHEMATIC', 'svg:RTU1_SCHEMATIC']);
+}
+
 if (failures > 0) {
   console.error(failures + ' assertion(s) failed');
   process.exit(1);
