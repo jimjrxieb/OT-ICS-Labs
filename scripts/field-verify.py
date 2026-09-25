@@ -50,6 +50,16 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "simulator"))
 import model822  # noqa: E402
+from field_obs import (  # noqa: E402  -- pure observation wording, shared with the S-001 kernel
+    PLANT_TRUTH_KEYS,
+    amps_reading,
+    gauge_reading,
+    missing_plant_keys as _missing_plant_keys,
+    pumproom_walk,
+    travel_reading,
+    valve_equipment as _valve_equipment,
+    valve_inspection,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "data" / "output"
@@ -105,20 +115,6 @@ def verify_travel(equipment: str) -> None:
           f"signal chain broke)")
 
 
-def _valve_equipment(truth: dict[str, float]) -> list[str]:
-    return sorted(k.removesuffix("_CHW_VLV_PHYSICAL") for k in truth if k.endswith("_CHW_VLV_PHYSICAL"))
-
-
-PLANT_TRUTH_KEYS = (
-    "CHW822_LOOP_PSIG_PHYSICAL", "CHW822_P1_AMPS_PHYSICAL", "CHW822_P2_AMPS_PHYSICAL",
-    "CHW822_P1_TDV_LEAK_GPM_PHYSICAL", "CHW822_P1_TDV_FAILED_PHYSICAL", "PUMPROOM_WATER_GAL_PHYSICAL",
-)
-
-
-def _missing_plant_keys(truth: dict[str, float]) -> list[str]:
-    return [k for k in PLANT_TRUTH_KEYS if k not in truth]
-
-
 def _plant_truth() -> dict[str, float]:
     """Ground truth for the plant instruments. A truth file written before the
     plant model existed lacks these keys -- say how to fix it, don't traceback."""
@@ -128,38 +124,6 @@ def _plant_truth() -> dict[str, float]:
             "No plant ground truth recorded yet -- run the simulator first: "
             "python3 simulator/bas_sim.py --scenario normal --steps 12")
     return truth
-
-
-def gauge_reading(truth: dict[str, float]) -> str:
-    return f"Pump suction gauge reads {truth['CHW822_LOOP_PSIG_PHYSICAL']:.1f} psig."
-
-
-def amps_reading(truth: dict[str, float], pump: str) -> str:
-    amps = truth[f"CHW822_{pump}_AMPS_PHYSICAL"]
-    return f"CHW822_{pump} motor: {amps:.1f} A (nameplate FLA {model822.TUNING['PUMP_FLA_AMPS']:.1f} A)."
-
-
-def pumproom_walk(truth: dict[str, float]) -> str:
-    gal = truth["PUMPROOM_WATER_GAL_PHYSICAL"]
-    if gal < 0.5:
-        return "Pump room floor is dry."
-    if gal < 15.0:
-        return "Wet floor around the P1 pump base; no standing water yet."
-    return ("Standing water on the floor, spreading from the P1 branch piping "
-            "toward the P1 motor and its local disconnect.")
-
-
-def valve_inspection(truth: dict[str, float], valve: str) -> str:
-    if valve == "P1_TDV" and truth["CHW822_P1_TDV_FAILED_PHYSICAL"]:
-        leak = truth["CHW822_P1_TDV_LEAK_GPM_PHYSICAL"]
-        if leak <= 0.0:
-            state = "not leaking right now (no pressure behind it)"
-        elif leak < 0.5:
-            state = "slow drip from the body"
-        else:
-            state = "steady stream of water from the body"
-        return f"{valve}: corrosion through the valve body; {state}."
-    return f"{valve}: body dry, no visible corrosion."
 
 
 def _truth(**overrides: float) -> dict[str, float]:
@@ -207,6 +171,10 @@ def self_test() -> int:
     # The instruments' key list must match what the model actually writes.
     assert set(PLANT_TRUTH_KEYS) <= set(model822.ground_truth_snapshot(model822.cold_start_state())), \
         sorted(set(PLANT_TRUTH_KEYS) - set(model822.ground_truth_snapshot(model822.cold_start_state())))
+
+    # Shared with the S-001 kernel: travel wording for a field travel check.
+    assert travel_reading(healthy, "MAU04") == "MAU04 CHW valve: actuator physically at 40.0% travel."
+
     print("field-verify self-test passed")
     return 0
 
