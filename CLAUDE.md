@@ -40,6 +40,7 @@ python3 simulator/model822.py --self-test
 python3 scripts/gen-822-inventory.py --self-test
 python3 open-source-stack/bacnet822.py --self-test
 python3 scripts/validate-submittal.py --self-test
+python3 simulator/scenario_kernel.py --self-test      # S-001 scenario kernel
 
 # Simulator CLI (dependency-free data engine)
 python3 simulator/bas_sim.py --scenario {normal,chilled_water_degraded,isolation_pressure_loss,or_humidity_excursion}

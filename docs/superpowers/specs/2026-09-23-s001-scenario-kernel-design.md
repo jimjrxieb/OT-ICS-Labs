@@ -165,6 +165,10 @@ Randomness only comes from the truth seed.
 
 ## 7. S-001 physics additions (`model822.py`)
 
+Implemented names (phase 1, authoritative over the names below):
+`p1_tdv_leak_gpm`, `p1_branch_isolated`, `makeup_valve_open`, continuous
+`air_frac`, and `resets` / `unproven_resets`.
+
 All constants go in `TUNING` and are **synthetic engineering assumptions**,
 labeled as such in code comments. Defaults are healthy, so existing behavior
 is unchanged unless a knob is set (except the §4 flow-proof change).
@@ -226,7 +230,7 @@ is visible by walking to the chiller panel, not on the BAS. Loop pressure is
 |---|---|
 | Look | pin BAS point; walk to chiller panel; walk pump room; read suction gauge; clamp P1/P2 amps; inspect a named valve; check strainer (normal — distractor); check MAU04 valve travel (normal — distractor) |
 | Decide | report water hazard / escalate; de-energize P1 (simulated LOTO decision); de-energize P2 |
-| Repair | close P1 branch isolation valves (isolates the leaking valve); replace leaking valve body (requires P1 branch isolated and de-energized); open fill/makeup; purge air at high-point vent; start P2 / restore P1 |
+| Repair | close P1 branch isolation valves (isolates the leaking valve); replace leaking valve body (requires P1 branch isolated and de-energized); open / close the fill (makeup) valve; purge air at high-point vent; start P2 / restore P1 |
 | Control | reset chiller (manual); release overrides (existing endpoints) |
 | Time | wait N minutes (1–60) |
 
@@ -235,13 +239,15 @@ is visible by walking to the chiller panel, not on the BAS. Loop pressure is
   `unsafe` → `UNSAFE_STOP`. De-energizing first, or escalating, satisfies it.
 - Closing isolation valves on a running pump → allowed, recorded as a
   dead-head consequence (pump overheat flag), not silently prevented.
-- Refilling **before** isolating works briefly and then bleeds down again;
-  water on the floor keeps rising. Refill does not fix a leak.
+- The fill (makeup) valve is manual (owner decision, 2026-09-24): open and
+  close are separate actions. Left open while the leak is active, the PRV
+  holds loop pressure while water on the floor keeps rising — a fill masks a
+  leak. Closed again, the loop bleeds down. Refill does not fix a leak.
 - Resetting the chiller without proven flow re-trips and is counted.
 
 **Recovery criteria (server-verified at closeout, from model state):**
 leak rate 0 (valve replaced or section isolated with lead pump on the
-healthy path); loop pressure within fill band; air purged; flow ≥ proof
+healthy path); loop holding fill pressure with the fill valve closed, through the stabilization window; air purged; flow ≥ proof
 threshold; chiller running without active diagnostic; loop supply within
 `±2 °F` of setpoint for a stabilization window (e.g. 20 simulated minutes);
 no session-created operator overrides still active; no new failure (no

@@ -488,6 +488,38 @@ def debrief(session: dict[str, Any], definition: dict[str, Any], truth: dict[str
     }
 
 
+# --- replay ------------------------------------------------------------------------
+
+def replay(definition: dict[str, Any], truth: dict[str, Any], session: dict[str, Any],
+           on_step: Any = None) -> list[str]:
+    """Rebuild the session from its seed and re-apply every record; each record
+    must reproduce its stored state hash. Returns the mismatches (empty = exact)."""
+    fresh = new_session(definition, truth, session["seed"], session["session_id"])
+    if fresh["start_hash"] != session["start_hash"]:
+        return ["start state differs"]
+    problems: list[str] = []
+    for rec in session["records"]:
+        kind = rec["kind"]
+        if kind == "action":
+            act(fresh, definition, rec["action_id"], rec["params"], rec["actor"], rec["role"])
+        elif kind == "wait":
+            wait(fresh, definition, rec["minutes"], rec["actor"])
+        elif kind == "hypotheses":
+            set_hypotheses(fresh, rec["hypotheses"], rec["actor"])
+        elif kind == "closeout":
+            closeout(fresh, definition, rec["fields"], rec["citations"], rec["actor"])
+        elif kind == "abandon":
+            abandon(fresh, rec["actor"])
+        else:
+            problems.append(f"{rec['record_id']}: unknown record kind {kind!r}")
+            break
+        if fresh["records"][-1]["state_hash"] != rec["state_hash"]:
+            problems.append(f"{rec['record_id']}: state hash differs")
+        if on_step is not None:
+            on_step(fresh)
+    return problems
+
+
 def self_test() -> int:
     definition, truth = load_scenario("S-001")
     # --- Task 2: loading and validation ------------------------------------------
@@ -688,6 +720,38 @@ def self_test() -> int:
     s_abandoned = fresh(4)
     abandon(s_abandoned, "instructor-1")
     assert s_abandoned["terminal"] == "ABANDONED" and debrief(s_abandoned, definition, truth)["outcome"] == "ABANDONED"
+
+    # --- Task 6: replay and the hidden-truth boundary -----------------------------
+    def assert_no_leak(obj: Any, where: str) -> None:
+        text = json.dumps(obj).lower()
+        for token in list(truth["forbidden_tokens"]) + [truth["hidden_cause"]]:
+            assert token.lower() not in text, (where, token)
+
+    # The closed happy path replays exactly, and no trainee view along the way leaks.
+    assert replay(definition, truth, s,
+                  on_step=lambda x: assert_no_leak(trainee_view(x, definition), "trainee view")) == []
+    unsafe = fresh(5)
+    act(unsafe, definition, "clamp_amps", {"pump": "P1"}, "t1", T)
+    assert unsafe["terminal"] == "UNSAFE_STOP" and replay(definition, truth, unsafe) == []
+    assert_no_leak(trainee_view(unsafe, definition), "unsafe view")
+    tampered = json.loads(json.dumps(s))
+    first_wait = next(r for r in tampered["records"] if r["kind"] == "wait")
+    first_wait["minutes"] -= 1
+    assert replay(definition, truth, tampered), "replay must detect a tampered record"
+
+    # Refusals and error messages are trainee-facing too.
+    probe = fresh(9)
+    messages: list[Any] = [act(probe, definition, "replace_p1_valve", {}, "t1", T)["reasons"]]
+    for aid, params in (("pin_point", {"point": "NOPE"}), ("inspect_valve", {"valve": "P9"}),
+                        ("start_p1", {"pump": "P2"}), ("teleport", {})):
+        try:
+            act(probe, definition, aid, params, "t1", T)
+        except ValueError as exc:
+            messages.append(str(exc))
+    assert len(messages) == 5, messages
+    assert_no_leak(messages, "messages")
+    # Positive control: the boundary check does catch the cause when it is there.
+    assert truth["hidden_cause"].lower() in json.dumps(debrief(s, definition, truth)).lower()
 
     print("scenario_kernel self-test passed")
     return 0
