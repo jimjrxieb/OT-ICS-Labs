@@ -908,9 +908,24 @@ def self_test() -> int:
     r_rearm = act(rearmed, definition, "inspect_valve", {"valve": "P1_TDV"}, "t1", T)
     assert r_rearm["outcome"] == "unsafe_stop", r_rearm
 
-    # Isolate-only path (lockout, isolate, start_p2, reset_chiller, waits): confirmed
-    # BLOCKED, not asserted here -- see final-fix-report.md. The loop never regains
-    # pressure or purges air without open_fill/vent_air, so it stays ISOLATED.
+    # Isolate-and-run-P2 recovery path (section isolated, lead pump on P2, valve
+    # never replaced) also reaches READY_FOR_VERIFICATION, once the loop is
+    # refilled and vented like any other recovery.
+    isolate_p2 = fresh(13)
+    act(isolate_p2, definition, "lockout_p1", {}, "t1", T)
+    act(isolate_p2, definition, "isolate_p1_branch", {}, "t1", T)
+    act(isolate_p2, definition, "open_fill", {}, "t1", T)
+    wait(isolate_p2, definition, 60, "t1")
+    wait(isolate_p2, definition, 30, "t1")
+    act(isolate_p2, definition, "close_fill", {}, "t1", T)
+    act(isolate_p2, definition, "vent_air", {}, "t1", T)
+    act(isolate_p2, definition, "start_p2", {}, "t1", T)
+    wait(isolate_p2, definition, 5, "t1")
+    act(isolate_p2, definition, "reset_chiller", {}, "t1", T)
+    wait(isolate_p2, definition, 10, "t1")
+    wait(isolate_p2, definition, 60, "t1")
+    assert lifecycle(isolate_p2, definition) == "READY_FOR_VERIFICATION", \
+        [c for c in criteria(isolate_p2, definition) if not c["passed"]]
 
     # F5: input validation at the kernel boundary.
     v5 = fresh(53)
