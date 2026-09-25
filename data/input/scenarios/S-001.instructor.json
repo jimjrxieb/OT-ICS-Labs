@@ -1,0 +1,31 @@
+{
+  "scenario_id": "S-001",
+  "version": 1,
+  "hidden_cause": "The body of the P1 branch triple-duty (balancing/check) valve, between the P1 branch isolation valves, has corroded through and is leaking; with the fill valve closed, the loop bled down until P1 air-bound and the chiller tripped on low evaporator flow.",
+  "leak_gpm_range": [1.2, 1.8],
+  "healthy_warmup_min": 30,
+  "pre_shift_leak_min": 180,
+  "profile": "design_summer",
+  "forbidden_tokens": ["p1_tdv_leak_gpm", "hidden_cause", "leak_gpm_range", "pre_shift_leak_min", "healthy_warmup_min", "triple-duty", "corroded through"],
+  "debrief": {
+    "key_evidence": [
+      "P1 shows running while chilled-water flow is near zero: a run status proves the motor turns, not that water moves.",
+      "The chiller panel shows LowEvapFlow, and that diagnostic is not on the BAS.",
+      "The suction gauge reads far below fill pressure; there is no BAS point for loop pressure.",
+      "P1 draws well under nameplate amps: an air-bound pump unloads.",
+      "Standing water spreads from the P1 branch."
+    ],
+    "safe_path": [
+      "De-energize P1, or escalate, before going hands-on near it in standing water.",
+      "Isolate the P1 branch to stop the leak, then replace the valve body.",
+      "Refill, close the fill valve again, and vent the air.",
+      "Restore a pump, confirm flow, then reset the chiller once.",
+      "Watch the supply temperature settle while the loop holds pressure with the fill closed."
+    ],
+    "traps": [
+      "Refilling with the fill valve left open holds pressure while the floor keeps flooding.",
+      "Resetting the chiller without flow re-trips it.",
+      "The strainer and MAU04 read normal."
+    ]
+  }
+}
