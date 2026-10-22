@@ -62,7 +62,7 @@ jobs:
         run: |
           gitleaks detect --source . --log-opts="--all" --redact --no-banner \
             --report-format sarif --report-path gitleaks.sarif --exit-code 1
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('gitleaks.sarif') != ''
         with:
           sarif_file: gitleaks.sarif
@@ -90,7 +90,7 @@ jobs:
       - name: Report (all severities)
         if: always()
         run: bandit -r . -s B101 -f sarif -o bandit.sarif --exit-zero
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('bandit.sarif') != ''
         with:
           sarif_file: bandit.sarif
@@ -118,7 +118,7 @@ jobs:
       - name: Report (all severities)
         if: always()
         run: semgrep scan $SEMGREP_RULES --metrics=off --sarif --output semgrep.sarif .
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('semgrep.sarif') != ''
         with:
           sarif_file: semgrep.sarif
@@ -144,7 +144,7 @@ jobs:
       - name: Report (all severities)
         if: always()
         run: trivy fs --scanners vuln,secret,misconfig --format sarif --output trivy.sarif --exit-code 0 .
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('trivy.sarif') != ''
         with:
           sarif_file: trivy.sarif
@@ -170,7 +170,7 @@ jobs:
       - name: Report (all severities)
         if: always()
         run: grype dir:. -o sarif --file grype.sarif
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('grype.sarif') != ''
         with:
           sarif_file: grype.sarif
@@ -196,7 +196,7 @@ jobs:
       - name: Report (all levels)
         if: always()
         run: git ls-files -z '*Dockerfile*' | xargs -0 --no-run-if-empty hadolint --format sarif > hadolint.sarif || true
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('hadolint.sarif') != ''
         with:
           sarif_file: hadolint.sarif
@@ -228,7 +228,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: zizmor --no-progress --format sarif .github/ > zizmor.sarif || true
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         if: always() && hashFiles('zizmor.sarif') != ''
         with:
           sarif_file: zizmor.sarif
